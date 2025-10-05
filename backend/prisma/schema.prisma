@@ -1,9 +1,82 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  full_name     String
+  password_hash String
+  avatar_url    String?
+  is_online     Boolean   @default(false)
+  last_seen     DateTime  @default(now())
+  created_at    DateTime  @default(now())
+
+  // Relations
+  sent_conversations Conversation[] @relation("ConversationUser1")
+  received_conversations Conversation[] @relation("ConversationUser2")
+  sent_messages     Message[]
+  read_receipts     ReadReceipt[]
+
+  @@map("users")
+}
+
+model Conversation {
+  id         String   @id @default(uuid())
+  user1_id   String
+  user2_id   String
+  created_at DateTime @default(now())
+
+  // Relations
+  user1      User     @relation("ConversationUser1", fields: [user1_id], references: [id], onDelete: Cascade)
+  user2      User     @relation("ConversationUser2", fields: [user2_id], references: [id], onDelete: Cascade)
+  messages   Message[]
+
+  // Ensure user1_id is always the smaller UUID to prevent duplicate conversations
+  @@unique([user1_id, user2_id])
+  @@map("conversations")
+}
+
+model Message {
+  id              String   @id @default(uuid())
+  conversation_id String
+  sender_id       String
+  message_type    MessageType @default(TEXT)
+  message_text    String?
+  file_url        String?
+  is_delivered    Boolean  @default(false)
+  delivered_at    DateTime?
+  created_at      DateTime @default(now())
+
+  // Relations
+  conversation    Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  sender          User         @relation(fields: [sender_id], references: [id], onDelete: Cascade)
+  read_receipts   ReadReceipt[]
+
+  @@map("messages")
+}
+
+model ReadReceipt {
+  id         String   @id @default(uuid())
+  message_id String
+  reader_id  String
+  read_at    DateTime @default(now())
+
+  // Relations
+  message    Message @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  reader     User    @relation(fields: [reader_id], references: [id], onDelete: Cascade)
+
+  // Prevent duplicate read receipts
+  @@unique([message_id, reader_id])
+  @@map("read_receipts")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
 }
