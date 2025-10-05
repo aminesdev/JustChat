@@ -26,3 +26,24 @@ export const handleAuthError = (res, error) => {
         errorResponse(res, "Internal server error");
     }
 };
+
+export const handleProfileError = (res, error) => {
+    const errorMap = {
+        CURRENT_PASSWORD_REQUIRED: () =>
+            badRequestResponse(
+                res,
+                "Current password is required to set new password"
+            ),
+        INVALID_CURRENT_PASSWORD: () =>
+            unauthorizedResponse(res, "Current password is incorrect"),
+        USER_NOT_FOUND: () => notFoundResponse(res, "User not found"),
+    };
+
+    const handler = errorMap[error.message];
+    if (handler) {
+        handler();
+    } else {
+        console.error("Profile error:", error);
+        errorResponse(res, "Internal server error");
+    }
+};
