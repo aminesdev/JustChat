@@ -1,4 +1,4 @@
-import { verifyAccessToken } from "../utils/jwt.js";
+import { tokenService } from "../services/tokenService.js";
 import { unauthorizedResponse } from "../utils/responseHandler.js";
 
 export const authenticateToken = (req, res, next) => {
@@ -10,7 +10,7 @@ export const authenticateToken = (req, res, next) => {
     }
 
     try {
-        const decoded = verifyAccessToken(token);
+        const decoded = tokenService.validateAccessToken(token);
         req.user = decoded;
         next();
     } catch (error) {

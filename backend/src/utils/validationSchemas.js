@@ -1,0 +1,92 @@
+import Joi from "joi";
+
+const uuidSchema = Joi.string().uuid().required();
+const emailSchema = Joi.string().email().required();
+const passwordSchema = Joi.string().min(6).required();
+
+export const authValidation = {
+    signup: Joi.object({
+        email: emailSchema,
+        password: passwordSchema,
+        full_name: Joi.string().min(2).max(100).required(),
+    }),
+
+    login: Joi.object({
+        email: emailSchema,
+        password: passwordSchema,
+    }),
+
+    refreshToken: Joi.object({
+        refreshToken: Joi.string().required(),
+    }),
+
+    logout: Joi.object({
+        refreshToken: Joi.string().required(),
+    }),
+};
+
+export const profileValidation = {
+    updateProfile: Joi.object({
+        full_name: Joi.string().min(2).max(100).optional(),
+        avatar_file: Joi.any().optional(),
+        currentPassword: Joi.string().min(6).optional(),
+        newPassword: Joi.string().min(6).optional(),
+    }).custom((value, helpers) => {
+        if (value.newPassword && !value.currentPassword) {
+            return helpers.error("any.custom", {
+                message:
+                    "Current password is required when setting new password",
+            });
+        }
+        return value;
+    }),
+};
+
+export const conversationValidation = {
+    createConversation: Joi.object({
+        user2_id: uuidSchema,
+    }),
+
+    conversationParams: Joi.object({
+        id: uuidSchema,
+    }),
+};
+
+export const messageValidation = {
+    createMessage: Joi.object({
+        message_text: Joi.string().max(1000).when("message_type", {
+            is: "TEXT",
+            then: Joi.required(),
+            otherwise: Joi.optional(),
+        }),
+        message_type: Joi.string().valid("TEXT", "IMAGE").default("TEXT"),
+        file_url: Joi.string().uri().when("message_type", {
+            is: "IMAGE",
+            then: Joi.required(),
+            otherwise: Joi.optional(),
+        }),
+    }),
+
+    updateMessage: Joi.object({
+        message_text: Joi.string().max(1000).required(),
+    }),
+
+    conversationParams: Joi.object({
+        conversation_id: uuidSchema,
+    }),
+
+    messageParams: Joi.object({
+        message_id: uuidSchema,
+    }),
+
+    queryParams: Joi.object({
+        page: Joi.number().integer().min(1).default(1),
+        limit: Joi.number().integer().min(1).max(100).default(50),
+    }),
+};
+
+export const readReceiptValidation = {
+    markAsRead: Joi.object({
+        message_id: uuidSchema,
+    }),
+};

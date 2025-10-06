@@ -14,6 +14,7 @@ export async function testCloudinary() {
     } catch (error) {
         console.log("Cloudinary configuration failed:");
         console.log("Error:", error.message);
+        throw new Error("CLOUDINARY_CONFIG_ERROR");
     }
 }
 

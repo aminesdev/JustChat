@@ -14,6 +14,7 @@ export const uploadImageService = async (fileBuffer, folder = "profiles") => {
             },
             (error, result) => {
                 if (error) {
+                    console.error("Cloudinary upload error:", error);
                     reject(new Error("UPLOAD_FAILED"));
                 } else {
                     resolve(result);
@@ -28,8 +29,14 @@ export const uploadImageService = async (fileBuffer, folder = "profiles") => {
 export const deleteImageService = async (publicId) => {
     try {
         const result = await cloudinary.uploader.destroy(publicId);
+
+        if (result.result !== "ok") {
+            throw new Error("DELETE_FAILED");
+        }
+
         return result;
     } catch (error) {
+        console.error("Cloudinary delete error:", error);
         throw new Error("DELETE_FAILED");
     }
 };

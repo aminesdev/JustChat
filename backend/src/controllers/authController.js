@@ -3,9 +3,10 @@ import {
     loginService,
     logoutService,
     refreshTokenService,
+    logoutAllDevicesService,
 } from "../services/authService.js";
 import { successResponse, createdResponse } from "../utils/responseHandler.js";
-import { handleAuthError } from "../utils/errorHandler.js";
+import { handleAuthError, handleTokenError } from "../utils/errorHandler.js";
 
 export const signup = async (req, res) => {
     try {
@@ -44,7 +45,7 @@ export const refreshToken = async (req, res) => {
             accessToken: result.accessToken,
         });
     } catch (error) {
-        handleAuthError(res, error);
+        handleTokenError(res, error);
     }
 };
 
@@ -55,6 +56,16 @@ export const logout = async (req, res) => {
 
         successResponse(res, "Logged out successfully");
     } catch (error) {
-        handleAuthError(res, error);
+        handleTokenError(res, error);
+    }
+};
+
+export const logoutAll = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        await logoutAllDevicesService(userId);
+        successResponse(res, "Logged out from all devices successfully");
+    } catch (error) {
+        handleTokenError(res, error);
     }
 };
