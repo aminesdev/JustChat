@@ -5,6 +5,7 @@ import { conversationRepository } from "../repositories/conversationRepository.j
 export const createMessageService = async (messageData) => {
     const { conversation_id, sender_id, message_type, message_text, file_url } =
         messageData;
+
     const conversation = await conversationRepository.findByIdWithAccess(
         conversation_id,
         sender_id
@@ -39,6 +40,10 @@ export const getMessagesService = async (
     page = 1,
     limit = 50
 ) => {
+    // Validate page and limit
+    page = Math.max(1, parseInt(page));
+    limit = Math.min(Math.max(1, parseInt(limit)), 100);
+
     const conversation = await conversationRepository.findByIdWithAccess(
         conversation_id,
         user_id
@@ -49,14 +54,34 @@ export const getMessagesService = async (
 
     const skip = (page - 1) * limit;
 
-    const messages = await messageRepository.findByConversation(
-        conversation_id,
-        skip,
-        limit
-    );
-    await messageRepository.markAsDelivered(conversation_id, user_id);
+    try {
+        const messages = await messageRepository.findByConversation(
+            conversation_id,
+            skip,
+            limit
+        );
 
-    return messages.reverse();
+        // Only mark as delivered if there are messages from other users
+        if (messages.length > 0) {
+            try {
+                await messageRepository.markAsDelivered(
+                    conversation_id,
+                    user_id
+                );
+            } catch (deliveryError) {
+                console.error(
+                    "Error marking messages as delivered:",
+                    deliveryError
+                );
+                // Don't throw, continue with message retrieval
+            }
+        }
+
+        return messages.reverse();
+    } catch (error) {
+        console.error("Error in getMessagesService:", error);
+        throw new Error("DATABASE_ERROR");
+    }
 };
 
 export const getMessageService = async (message_id, user_id) => {
@@ -73,16 +98,20 @@ export const getMessageService = async (message_id, user_id) => {
 
 export const updateMessageService = async (message_id, user_id, updateData) => {
     const { message_text } = updateData;
+
     const existingMessage = await messageRepository.findByIdWithAccess(
         message_id,
         user_id
     );
+
     if (!existingMessage || existingMessage.sender_id !== user_id) {
         throw new Error("MESSAGE_NOT_FOUND_OR_NOT_EDITABLE");
     }
+
     if (existingMessage.message_type !== "TEXT") {
         throw new Error("ONLY_TEXT_MESSAGES_CAN_BE_EDITED");
     }
+
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
     if (existingMessage.created_at < fiveMinutesAgo) {
         throw new Error("MESSAGE_EDIT_TIMEOUT");
@@ -91,6 +120,7 @@ export const updateMessageService = async (message_id, user_id, updateData) => {
     const updatedMessage = await messageRepository.update(message_id, {
         message_text,
     });
+
     return updatedMessage;
 };
 
@@ -99,10 +129,10 @@ export const deleteMessageService = async (message_id, user_id) => {
         message_id,
         user_id
     );
+
     if (!existingMessage || existingMessage.sender_id !== user_id) {
         throw new Error("MESSAGE_NOT_FOUND_OR_NOT_DELETABLE");
     }
-
 
     if (existingMessage.message_type === "TEXT") {
         const deletedMessage = await messageRepository.update(message_id, {
@@ -121,12 +151,15 @@ export const markAsReadService = async (message_id, user_id) => {
         message_id,
         user_id
     );
+
     if (!message) {
         throw new Error("MESSAGE_NOT_FOUND");
     }
+
     if (message.sender_id === user_id) {
         throw new Error("CANNOT_MARK_OWN_MESSAGE_READ");
     }
+
     const readReceipt = await readReceiptRepository.upsert({
         message_id,
         reader_id: user_id,
@@ -141,10 +174,19 @@ export const getUnreadCountService = async (conversation_id, user_id) => {
         conversation_id,
         user_id
     );
+
     if (!conversation) {
         throw new Error("CONVERSATION_NOT_FOUND_OR_ACCESS_DENIED");
     }
 
-    const count = await messageRepository.countUnread(conversation_id, user_id);
-    return { unread_count: count };
+    try {
+        const count = await messageRepository.countUnread(
+            conversation_id,
+            user_id
+        );
+        return { unread_count: count };
+    } catch (error) {
+        console.error("Error in getUnreadCountService:", error);
+        throw new Error("DATABASE_ERROR");
+    }
 };

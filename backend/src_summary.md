@@ -4,13 +4,45 @@
 ```js
 import express from "express";
 import routes from "./routes/index.js";
+import { specs, swaggerUi } from "./config/swagger.js";
+import cors from "cors";
 
 const app = express();
-app.use(express.json());
+
+app.use(cors());
+
+app.use(express.json({ limit: "10mb" }));
+
+app.use((req, res, next) => {
+    console.log(`${req.method} ${req.url}`);
+    next();
+});
+
+app.use(
+    "/api-docs",
+    swaggerUi.serve,
+    swaggerUi.setup(specs, {
+        explorer: true,
+        customCss: ".swagger-ui .topbar { display: none }",
+        customSiteTitle: "Chat App API Documentation",
+    })
+);
+
+app.get("/health", (req, res) => {
+    res.status(200).json({
+        success: true,
+        msg: "Chat App API is running",
+        data: {
+            timestamp: new Date().toISOString(),
+            version: "1.0.0",
+        },
+    });
+});
 
 app.use("/api", routes);
 
 export default app;
+
 ```
 
 ## File: config/cloudinary.js
@@ -56,6 +88,763 @@ export async function connectDb() {
         process.exit(1);
     }
 }
+
+```
+
+## File: config/swagger.js
+```js
+import swaggerJsdoc from "swagger-jsdoc";
+import swaggerUi from "swagger-ui-express";
+
+const options = {
+    definition: {
+        openapi: "3.0.0",
+        info: {
+            title: "Chat App API",
+            version: "1.0.0",
+            description: `
+# Chat App API
+
+A real-time chat application backend with complete messaging features.
+
+## Features:
+- User authentication with JWT
+- Real-time messaging (text and images)
+- Conversation management
+- Read receipts and message status
+- File upload with Cloudinary
+- Profile management
+
+## Authentication:
+- Uses JWT Bearer tokens
+- Access tokens expire in 15 minutes
+- Refresh tokens expire in 30 days
+- Include token in header: \`Authorization: Bearer <token>\`
+
+## Common Status Codes:
+- 200: Success
+- 201: Created
+- 400: Validation error
+- 401: Unauthorized
+- 404: Not found
+- 409: Resource already exists
+- 500: Server error
+            `.trim(),
+            contact: {
+                name: "API Support",
+                email: "support@chatapp.com",
+            },
+            license: {
+                name: "MIT",
+                url: "https://opensource.org/licenses/MIT",
+            },
+        },
+        servers: [
+            {
+                url: "http://localhost:3000/api",
+                description: "Development server",
+            },
+            {
+                url: "https://api.chatapp.com/v1",
+                description: "Production server",
+            },
+        ],
+        components: {
+            securitySchemes: {
+                bearerAuth: {
+                    type: "http",
+                    scheme: "bearer",
+                    bearerFormat: "JWT",
+                    description:
+                        "Enter your JWT access token obtained from login or signup",
+                },
+            },
+            schemas: {
+                // User Schemas
+                User: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174000",
+                        },
+                        email: {
+                            type: "string",
+                            format: "email",
+                            example: "user@example.com",
+                        },
+                        full_name: {
+                            type: "string",
+                            example: "John Doe",
+                        },
+                        avatar_url: {
+                            type: "string",
+                            nullable: true,
+                            example:
+                                "https://res.cloudinary.com/cloudname/image/upload/v1234567/avatar.jpg",
+                        },
+                        is_online: {
+                            type: "boolean",
+                            example: true,
+                        },
+                        last_seen: {
+                            type: "string",
+                            format: "date-time",
+                            example: "2023-10-01T12:00:00Z",
+                        },
+                        created_at: {
+                            type: "string",
+                            format: "date-time",
+                            example: "2023-10-01T12:00:00Z",
+                        },
+                    },
+                },
+
+                // Auth Schemas
+                SignupRequest: {
+                    type: "object",
+                    required: ["email", "password", "full_name"],
+                    properties: {
+                        email: {
+                            type: "string",
+                            format: "email",
+                            example: "user@example.com",
+                        },
+                        password: {
+                            type: "string",
+                            minLength: 6,
+                            example: "password123",
+                        },
+                        full_name: {
+                            type: "string",
+                            minLength: 2,
+                            maxLength: 100,
+                            example: "John Doe",
+                        },
+                    },
+                },
+                LoginRequest: {
+                    type: "object",
+                    required: ["email", "password"],
+                    properties: {
+                        email: {
+                            type: "string",
+                            format: "email",
+                            example: "user@example.com",
+                        },
+                        password: {
+                            type: "string",
+                            example: "password123",
+                        },
+                    },
+                },
+                AuthResponse: {
+                    type: "object",
+                    properties: {
+                        user: {
+                            $ref: "#/components/schemas/User",
+                        },
+                        accessToken: {
+                            type: "string",
+                            description: "JWT Access Token (15 minutes expiry)",
+                            example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        },
+                        refreshToken: {
+                            type: "string",
+                            description: "JWT Refresh Token (30 days expiry)",
+                            example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        },
+                    },
+                },
+                RefreshTokenRequest: {
+                    type: "object",
+                    required: ["refreshToken"],
+                    properties: {
+                        refreshToken: {
+                            type: "string",
+                            example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        },
+                    },
+                },
+                RefreshTokenResponse: {
+                    type: "object",
+                    properties: {
+                        accessToken: {
+                            type: "string",
+                            example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        },
+                    },
+                },
+                LogoutRequest: {
+                    type: "object",
+                    required: ["refreshToken"],
+                    properties: {
+                        refreshToken: {
+                            type: "string",
+                            example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        },
+                    },
+                },
+
+                // Conversation Schemas
+                Conversation: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174000",
+                        },
+                        user1_id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174000",
+                        },
+                        user2_id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174001",
+                        },
+                        created_at: {
+                            type: "string",
+                            format: "date-time",
+                            example: "2023-10-01T12:00:00Z",
+                        },
+                        user1: {
+                            $ref: "#/components/schemas/User",
+                        },
+                        user2: {
+                            $ref: "#/components/schemas/User",
+                        },
+                        last_message: {
+                            type: "object",
+                            properties: {
+                                id: {
+                                    type: "string",
+                                    example:
+                                        "123e4567-e89b-12d3-a456-426614174002",
+                                },
+                                message_text: {
+                                    type: "string",
+                                    example: "Hello there!",
+                                },
+                                created_at: {
+                                    type: "string",
+                                    format: "date-time",
+                                    example: "2023-10-01T12:05:00Z",
+                                },
+                                sender: {
+                                    type: "object",
+                                    properties: {
+                                        id: {
+                                            type: "string",
+                                            example:
+                                                "123e4567-e89b-12d3-a456-426614174000",
+                                        },
+                                        full_name: {
+                                            type: "string",
+                                            example: "John Doe",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                        unread_count: {
+                            type: "integer",
+                            example: 5,
+                        },
+                    },
+                },
+                CreateConversationRequest: {
+                    type: "object",
+                    required: ["user2_id"],
+                    properties: {
+                        user2_id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174001",
+                        },
+                    },
+                },
+
+                // Message Schemas
+                Message: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174002",
+                        },
+                        conversation_id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174000",
+                        },
+                        sender_id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174000",
+                        },
+                        message_type: {
+                            type: "string",
+                            enum: ["TEXT", "IMAGE"],
+                            example: "TEXT",
+                        },
+                        message_text: {
+                            type: "string",
+                            nullable: true,
+                            example: "Hello, how are you?",
+                        },
+                        file_url: {
+                            type: "string",
+                            nullable: true,
+                            example:
+                                "https://res.cloudinary.com/cloudname/image/upload/v1234567/image.jpg",
+                        },
+                        is_delivered: {
+                            type: "boolean",
+                            example: true,
+                        },
+                        delivered_at: {
+                            type: "string",
+                            format: "date-time",
+                            nullable: true,
+                            example: "2023-10-01T12:05:00Z",
+                        },
+                        created_at: {
+                            type: "string",
+                            format: "date-time",
+                            example: "2023-10-01T12:00:00Z",
+                        },
+                        sender: {
+                            $ref: "#/components/schemas/User",
+                        },
+                        read_receipts: {
+                            type: "array",
+                            items: {
+                                $ref: "#/components/schemas/ReadReceipt",
+                            },
+                        },
+                    },
+                },
+                CreateMessageRequest: {
+                    type: "object",
+                    properties: {
+                        message_text: {
+                            type: "string",
+                            maxLength: 1000,
+                            example: "Hello there!",
+                        },
+                        message_type: {
+                            type: "string",
+                            enum: ["TEXT", "IMAGE"],
+                            default: "TEXT",
+                        },
+                        file_url: {
+                            type: "string",
+                            format: "uri",
+                            example: "https://example.com/image.jpg",
+                        },
+                    },
+                },
+                UpdateMessageRequest: {
+                    type: "object",
+                    required: ["message_text"],
+                    properties: {
+                        message_text: {
+                            type: "string",
+                            maxLength: 1000,
+                            example: "Updated message text",
+                        },
+                    },
+                },
+
+                // Profile Schemas
+                UpdateProfileRequest: {
+                    type: "object",
+                    properties: {
+                        full_name: {
+                            type: "string",
+                            minLength: 2,
+                            maxLength: 100,
+                            example: "John Updated",
+                        },
+                        avatar_file: {
+                            type: "string",
+                            format: "binary",
+                            description:
+                                "Image file for avatar (JPEG, PNG, WebP, max 5MB)",
+                        },
+                        currentPassword: {
+                            type: "string",
+                            minLength: 6,
+                            example: "currentpassword123",
+                        },
+                        newPassword: {
+                            type: "string",
+                            minLength: 6,
+                            example: "newpassword123",
+                        },
+                    },
+                },
+
+                // Read Receipt Schemas
+                ReadReceipt: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174003",
+                        },
+                        message_id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174002",
+                        },
+                        reader_id: {
+                            type: "string",
+                            format: "uuid",
+                            example: "123e4567-e89b-12d3-a456-426614174001",
+                        },
+                        read_at: {
+                            type: "string",
+                            format: "date-time",
+                            example: "2023-10-01T12:05:00Z",
+                        },
+                        reader: {
+                            type: "object",
+                            properties: {
+                                id: {
+                                    type: "string",
+                                    format: "uuid",
+                                    example:
+                                        "123e4567-e89b-12d3-a456-426614174001",
+                                },
+                                full_name: {
+                                    type: "string",
+                                    example: "Jane Smith",
+                                },
+                            },
+                        },
+                    },
+                },
+
+                // Pagination and Utility Schemas
+                Pagination: {
+                    type: "object",
+                    properties: {
+                        page: {
+                            type: "integer",
+                            example: 1,
+                        },
+                        limit: {
+                            type: "integer",
+                            example: 50,
+                        },
+                        total: {
+                            type: "integer",
+                            example: 150,
+                        },
+                    },
+                },
+                UnreadCount: {
+                    type: "object",
+                    properties: {
+                        unread_count: {
+                            type: "integer",
+                            example: 5,
+                        },
+                    },
+                },
+                ParticipantsResponse: {
+                    type: "object",
+                    properties: {
+                        participants: {
+                            type: "array",
+                            items: {
+                                $ref: "#/components/schemas/User",
+                            },
+                        },
+                    },
+                },
+
+                // Response Schemas
+                SuccessResponse: {
+                    type: "object",
+                    properties: {
+                        success: {
+                            type: "boolean",
+                            example: true,
+                        },
+                        msg: {
+                            type: "string",
+                            example: "Operation completed successfully",
+                        },
+                        data: {
+                            type: "object",
+                            additionalProperties: true,
+                        },
+                    },
+                },
+                ErrorResponse: {
+                    type: "object",
+                    properties: {
+                        success: {
+                            type: "boolean",
+                            example: false,
+                        },
+                        msg: {
+                            type: "string",
+                            example: "Error message description",
+                        },
+                        data: {
+                            type: "object",
+                            nullable: true,
+                        },
+                    },
+                },
+                ValidationError: {
+                    type: "object",
+                    properties: {
+                        success: {
+                            type: "boolean",
+                            example: false,
+                        },
+                        msg: {
+                            type: "string",
+                            example:
+                                "Validation failed: email must be a valid email",
+                        },
+                        data: {
+                            type: "object",
+                            nullable: true,
+                        },
+                    },
+                },
+            },
+            responses: {
+                UnauthorizedError: {
+                    description: "Access token is missing or invalid",
+                    content: {
+                        "application/json": {
+                            schema: {
+                                $ref: "#/components/schemas/ErrorResponse",
+                            },
+                            examples: {
+                                missingToken: {
+                                    summary: "Missing access token",
+                                    value: {
+                                        success: false,
+                                        msg: "Access token required",
+                                        data: null,
+                                    },
+                                },
+                                invalidToken: {
+                                    summary: "Invalid access token",
+                                    value: {
+                                        success: false,
+                                        msg: "Invalid or expired token",
+                                        data: null,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                ValidationError: {
+                    description: "Request validation failed",
+                    content: {
+                        "application/json": {
+                            schema: {
+                                $ref: "#/components/schemas/ValidationError",
+                            },
+                        },
+                    },
+                },
+                NotFoundError: {
+                    description: "Resource not found",
+                    content: {
+                        "application/json": {
+                            schema: {
+                                $ref: "#/components/schemas/ErrorResponse",
+                            },
+                            examples: {
+                                userNotFound: {
+                                    summary: "User not found",
+                                    value: {
+                                        success: false,
+                                        msg: "User not found",
+                                        data: null,
+                                    },
+                                },
+                                conversationNotFound: {
+                                    summary: "Conversation not found",
+                                    value: {
+                                        success: false,
+                                        msg: "Conversation not found",
+                                        data: null,
+                                    },
+                                },
+                                messageNotFound: {
+                                    summary: "Message not found",
+                                    value: {
+                                        success: false,
+                                        msg: "Message not found",
+                                        data: null,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                ConflictError: {
+                    description: "Resource already exists",
+                    content: {
+                        "application/json": {
+                            schema: {
+                                $ref: "#/components/schemas/ErrorResponse",
+                            },
+                            examples: {
+                                userExists: {
+                                    summary: "User already exists",
+                                    value: {
+                                        success: false,
+                                        msg: "User already exists",
+                                        data: null,
+                                    },
+                                },
+                                conversationExists: {
+                                    summary: "Conversation already exists",
+                                    value: {
+                                        success: false,
+                                        msg: "Conversation already exists",
+                                        data: null,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                BadRequestError: {
+                    description: "Bad request",
+                    content: {
+                        "application/json": {
+                            schema: {
+                                $ref: "#/components/schemas/ErrorResponse",
+                            },
+                            examples: {
+                                invalidCredentials: {
+                                    summary: "Invalid credentials",
+                                    value: {
+                                        success: false,
+                                        msg: "Invalid email or password",
+                                        data: null,
+                                    },
+                                },
+                                currentPasswordRequired: {
+                                    summary: "Current password required",
+                                    value: {
+                                        success: false,
+                                        msg: "Current password is required to set new password",
+                                        data: null,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            parameters: {
+                ConversationId: {
+                    name: "id",
+                    in: "path",
+                    required: true,
+                    schema: {
+                        type: "string",
+                        format: "uuid",
+                    },
+                    description: "Conversation ID",
+                },
+                MessageId: {
+                    name: "message_id",
+                    in: "path",
+                    required: true,
+                    schema: {
+                        type: "string",
+                        format: "uuid",
+                    },
+                    description: "Message ID",
+                },
+                ConversationIdParam: {
+                    name: "conversation_id",
+                    in: "path",
+                    required: true,
+                    schema: {
+                        type: "string",
+                        format: "uuid",
+                    },
+                    description: "Conversation ID",
+                },
+                PageParam: {
+                    name: "page",
+                    in: "query",
+                    schema: {
+                        type: "integer",
+                        minimum: 1,
+                        default: 1,
+                    },
+                    description: "Page number",
+                },
+                LimitParam: {
+                    name: "limit",
+                    in: "query",
+                    schema: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: 100,
+                        default: 50,
+                    },
+                    description: "Number of items per page",
+                },
+            },
+        },
+        security: [
+            {
+                bearerAuth: [],
+            },
+        ],
+        tags: [
+            {
+                name: "Authentication",
+                description: "User authentication endpoints",
+            },
+            {
+                name: "Profile",
+                description: "User profile management",
+            },
+            {
+                name: "Conversations",
+                description: "Conversation management",
+            },
+            {
+                name: "Messages",
+                description: "Message management",
+            },
+            {
+                name: "System",
+                description: "System health and status",
+            },
+        ],
+    },
+    apis: ["./src/routes/*.js"],
+};
+
+const specs = swaggerJsdoc(options);
+
+export { specs, swaggerUi };
 
 ```
 
@@ -1040,14 +1829,216 @@ import { authValidation } from "../utils/validationSchemas.js";
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Authentication
+ *   description: User authentication endpoints
+ */
+
+/**
+ * @swagger
+ * /auth/signup:
+ *   post:
+ *     summary: Register a new user
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - full_name
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "user@example.com"
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: "password123"
+ *               full_name:
+ *                 type: string
+ *                 minLength: 2
+ *                 example: "John Doe"
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "User created successfully"
+ *                   data:
+ *                     user:
+ *                       id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       email: "user@example.com"
+ *                       full_name: "John Doe"
+ *                       avatar_url: null
+ *                       is_online: false
+ *                       last_seen: "2023-10-01T12:00:00Z"
+ *                       created_at: "2023-10-01T12:00:00Z"
+ *                     accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                     refreshToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       409:
+ *         description: User already exists
+ */
 router.post("/signup", validate(authValidation.signup), signup);
+
+/**
+ * @swagger
+ * /auth/login:
+ *   post:
+ *     summary: Authenticate user
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "user@example.com"
+ *               password:
+ *                 type: string
+ *                 example: "password123"
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Login successful"
+ *                   data:
+ *                     user:
+ *                       id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       email: "user@example.com"
+ *                       full_name: "John Doe"
+ *                       avatar_url: null
+ *                       is_online: true
+ *                       last_seen: "2023-10-01T12:00:00Z"
+ *                       created_at: "2023-10-01T12:00:00Z"
+ *                     accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                     refreshToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         description: Invalid credentials
+ */
 router.post("/login", validate(authValidation.login), login);
-router.post("/logout", validate(authValidation.logout), logout);
+
+/**
+ * @swagger
+ * /auth/refresh-token:
+ *   post:
+ *     summary: Refresh access token
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *     responses:
+ *       200:
+ *         description: Token refreshed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Access token refreshed successfully"
+ *                   data:
+ *                     accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
 router.post(
     "/refresh-token",
     validate(authValidation.refreshToken),
     refreshToken
 );
+
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Logout user
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ */
+router.post("/logout", validate(authValidation.logout), logout);
+
+/**
+ * @swagger
+ * /auth/logout-all:
+ *   post:
+ *     summary: Logout from all devices
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Logged out from all devices
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
 router.post("/logout-all", authenticateToken, logoutAll);
 
 export default router;
@@ -1071,22 +2062,219 @@ import { conversationValidation } from "../utils/validationSchemas.js";
 const router = express.Router();
 router.use(authenticateToken);
 
+/**
+ * @swagger
+ * tags:
+ *   name: Conversations
+ *   description: Conversation management endpoints
+ */
+
+/**
+ * @swagger
+ * /conversations:
+ *   post:
+ *     summary: Create a new conversation
+ *     tags: [Conversations]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - user2_id
+ *             properties:
+ *               user2_id:
+ *                 type: string
+ *                 format: uuid
+ *                 example: "123e4567-e89b-12d3-a456-426614174001"
+ *     responses:
+ *       201:
+ *         description: Conversation created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Conversation created successfully"
+ *                   data:
+ *                     conversation:
+ *                       id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       user1_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       user2_id: "123e4567-e89b-12d3-a456-426614174001"
+ *                       created_at: "2023-10-01T12:00:00Z"
+ *                       user1:
+ *                         id: "123e4567-e89b-12d3-a456-426614174000"
+ *                         email: "user1@example.com"
+ *                         full_name: "John Doe"
+ *                         avatar_url: null
+ *                         is_online: true
+ *                         last_seen: "2023-10-01T12:00:00Z"
+ *                       user2:
+ *                         id: "123e4567-e89b-12d3-a456-426614174001"
+ *                         email: "user2@example.com"
+ *                         full_name: "Jane Smith"
+ *                         avatar_url: null
+ *                         is_online: false
+ *                         last_seen: "2023-10-01T11:00:00Z"
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Conversation already exists
+ */
 router.post(
     "/",
     validate(conversationValidation.createConversation),
     createConversation
 );
+
+/**
+ * @swagger
+ * /conversations:
+ *   get:
+ *     summary: Get user's conversations
+ *     tags: [Conversations]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Conversations retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Conversations retrieved successfully"
+ *                   data:
+ *                     conversations:
+ *                       - id: "123e4567-e89b-12d3-a456-426614174000"
+ *                         user1_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                         user2_id: "123e4567-e89b-12d3-a456-426614174001"
+ *                         created_at: "2023-10-01T12:00:00Z"
+ *                         user1:
+ *                           id: "123e4567-e89b-12d3-a456-426614174000"
+ *                           email: "user1@example.com"
+ *                           full_name: "John Doe"
+ *                           avatar_url: null
+ *                           is_online: true
+ *                           last_seen: "2023-10-01T12:00:00Z"
+ *                         user2:
+ *                           id: "123e4567-e89b-12d3-a456-426614174001"
+ *                           email: "user2@example.com"
+ *                           full_name: "Jane Smith"
+ *                           avatar_url: null
+ *                           is_online: false
+ *                           last_seen: "2023-10-01T11:00:00Z"
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
 router.get("/", getUserConversations);
+
+/**
+ * @swagger
+ * /conversations/{id}:
+ *   get:
+ *     summary: Get specific conversation
+ *     tags: [Conversations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Conversation retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         description: Conversation not found
+ */
 router.get(
     "/:id",
     validateParams(conversationValidation.conversationParams),
     getConversation
 );
+
+/**
+ * @swagger
+ * /conversations/{id}/participants:
+ *   get:
+ *     summary: Get conversation participants
+ *     tags: [Conversations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Participants retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         description: Conversation not found
+ */
 router.get(
     "/:id/participants",
     validateParams(conversationValidation.conversationParams),
     getConversationParticipants
 );
+
+/**
+ * @swagger
+ * /conversations/{id}:
+ *   delete:
+ *     summary: Delete a conversation
+ *     tags: [Conversations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Conversation deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         description: Conversation not found
+ */
 router.delete(
     "/:id",
     validateParams(conversationValidation.conversationParams),
@@ -1106,6 +2294,42 @@ import conversationRoutes from "./conversation.js";
 import messageRoutes from "./message.js";
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   - name: Authentication
+ *     description: User authentication endpoints
+ *   - name: Profile
+ *     description: User profile management
+ *   - name: Conversations
+ *     description: Conversation management
+ *   - name: Messages
+ *     description: Message management
+ */
+
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Health check
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: API is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               health:
+ *                 value:
+ *                   success: true
+ *                   msg: "Chat App API is running"
+ *                   data:
+ *                     timestamp: "2023-10-01T12:00:00Z"
+ *                     version: "1.0.0"
+ */
 
 router.use("/auth", authRoutes);
 router.use("/profile", profileRoutes);
@@ -1140,34 +2364,317 @@ import {
 } from "../utils/validationSchemas.js";
 
 const router = express.Router();
+
 router.use(authenticateToken);
 
+/**
+ * @swagger
+ * tags:
+ *   name: Messages
+ *   description: Message management endpoints
+ */
+
+/**
+ * @swagger
+ * /conversations/{conversation_id}/messages:
+ *   post:
+ *     summary: Send a message
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversation_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Conversation ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               message_text:
+ *                 type: string
+ *                 maxLength: 1000
+ *                 example: "Hello there!"
+ *               message_type:
+ *                 type: string
+ *                 enum: [TEXT, IMAGE]
+ *                 default: TEXT
+ *               file_url:
+ *                 type: string
+ *                 format: uri
+ *                 example: "https://example.com/image.jpg"
+ *     responses:
+ *       201:
+ *         description: Message sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Message sent successfully"
+ *                   data:
+ *                     message:
+ *                       id: "123e4567-e89b-12d3-a456-426614174002"
+ *                       conversation_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       sender_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       message_type: "TEXT"
+ *                       message_text: "Hello there!"
+ *                       file_url: null
+ *                       is_delivered: false
+ *                       created_at: "2023-10-01T12:00:00Z"
+ *                       sender:
+ *                         id: "123e4567-e89b-12d3-a456-426614174000"
+ *                         email: "user@example.com"
+ *                         full_name: "John Doe"
+ *                         avatar_url: null
+ *                         is_online: true
+ *                         last_seen: "2023-10-01T12:00:00Z"
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       404:
+ *         description: Conversation not found or access denied
+ */
 router.post(
     "/:conversation_id/messages",
-    validateParams(messageValidation.conversationParams), // FIXED
+    validateParams(messageValidation.conversationParams),
     validate(messageValidation.createMessage),
     createMessage
 );
 
+/**
+ * @swagger
+ * /conversations/{conversation_id}/messages:
+ *   get:
+ *     summary: Get messages from a conversation
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversation_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Conversation ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 50
+ *         description: Number of messages per page
+ *     responses:
+ *       200:
+ *         description: Messages retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Messages retrieved successfully"
+ *                   data:
+ *                     messages:
+ *                       - id: "123e4567-e89b-12d3-a456-426614174002"
+ *                         conversation_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                         sender_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                         message_type: "TEXT"
+ *                         message_text: "Hello there!"
+ *                         file_url: null
+ *                         is_delivered: true
+ *                         created_at: "2023-10-01T12:00:00Z"
+ *                         sender:
+ *                           id: "123e4567-e89b-12d3-a456-426614174000"
+ *                           email: "user1@example.com"
+ *                           full_name: "John Doe"
+ *                           avatar_url: null
+ *                     pagination:
+ *                       page: 1
+ *                       limit: 50
+ *                       total: 1
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       404:
+ *         description: Conversation not found or access denied
+ */
 router.get(
     "/:conversation_id/messages",
-    validateParams(messageValidation.conversationParams), // FIXED
+    validateParams(messageValidation.conversationParams),
     validateQuery(messageValidation.queryParams),
     getMessages
 );
 
+/**
+ * @swagger
+ * /conversations/{conversation_id}/unread-count:
+ *   get:
+ *     summary: Get unread message count
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversation_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Conversation ID
+ *     responses:
+ *       200:
+ *         description: Unread count retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Unread count retrieved successfully"
+ *                   data:
+ *                     unread_count: 5
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       404:
+ *         description: Conversation not found or access denied
+ */
 router.get(
     "/:conversation_id/unread-count",
-    validateParams(messageValidation.conversationParams), // FIXED
+    validateParams(messageValidation.conversationParams),
     getUnreadCount
 );
 
+/**
+ * @swagger
+ * /conversations/message/{message_id}:
+ *   get:
+ *     summary: Get a specific message
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: message_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Message ID
+ *     responses:
+ *       200:
+ *         description: Message retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Message retrieved successfully"
+ *                   data:
+ *                     message:
+ *                       id: "123e4567-e89b-12d3-a456-426614174002"
+ *                       conversation_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       sender_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       message_type: "TEXT"
+ *                       message_text: "Hello there!"
+ *                       file_url: null
+ *                       is_delivered: true
+ *                       created_at: "2023-10-01T12:00:00Z"
+ *                       sender:
+ *                         id: "123e4567-e89b-12d3-a456-426614174000"
+ *                         email: "user@example.com"
+ *                         full_name: "John Doe"
+ *                         avatar_url: null
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       404:
+ *         description: Message not found
+ */
 router.get(
     "/message/:message_id",
     validateParams(messageValidation.messageParams),
     getMessage
 );
 
+/**
+ * @swagger
+ * /conversations/message/{message_id}:
+ *   put:
+ *     summary: Update a message
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: message_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Message ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - message_text
+ *             properties:
+ *               message_text:
+ *                 type: string
+ *                 maxLength: 1000
+ *                 example: "Updated message content"
+ *     responses:
+ *       200:
+ *         description: Message updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Message updated successfully"
+ *                   data:
+ *                     message:
+ *                       id: "123e4567-e89b-12d3-a456-426614174002"
+ *                       conversation_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       sender_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       message_type: "TEXT"
+ *                       message_text: "Updated message content"
+ *                       file_url: null
+ *                       is_delivered: true
+ *                       created_at: "2023-10-01T12:00:00Z"
+ *       400:
+ *         description: Validation error or edit timeout
+ *       404:
+ *         description: Message not found or not editable
+ */
 router.put(
     "/message/:message_id",
     validateParams(messageValidation.messageParams),
@@ -1175,12 +2682,89 @@ router.put(
     updateMessage
 );
 
+/**
+ * @swagger
+ * /conversations/message/{message_id}:
+ *   delete:
+ *     summary: Delete a message
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: message_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Message ID
+ *     responses:
+ *       200:
+ *         description: Message deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Message deleted successfully"
+ *                   data:
+ *                     result:
+ *                       id: "123e4567-e89b-12d3-a456-426614174002"
+ *                       deleted: true
+ *       404:
+ *         description: Message not found or not deletable
+ */
 router.delete(
     "/message/:message_id",
     validateParams(messageValidation.messageParams),
     deleteMessage
 );
 
+/**
+ * @swagger
+ * /conversations/message/{message_id}/read:
+ *   post:
+ *     summary: Mark a message as read
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: message_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Message ID
+ *     responses:
+ *       200:
+ *         description: Message marked as read
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Message marked as read"
+ *                   data:
+ *                     read_receipt:
+ *                       id: "123e4567-e89b-12d3-a456-426614174003"
+ *                       message_id: "123e4567-e89b-12d3-a456-426614174002"
+ *                       reader_id: "123e4567-e89b-12d3-a456-426614174001"
+ *                       read_at: "2023-10-01T12:05:00Z"
+ *                       reader:
+ *                         id: "123e4567-e89b-12d3-a456-426614174001"
+ *                         full_name: "Jane Smith"
+ *       400:
+ *         description: Cannot mark own message as read
+ *       404:
+ *         description: Message not found
+ */
 router.post(
     "/message/:message_id/read",
     validateParams(readReceiptValidation.markAsRead),
@@ -1201,7 +2785,111 @@ import { profileValidation } from "../utils/validationSchemas.js";
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Profile
+ *   description: User profile management endpoints
+ */
+
+/**
+ * @swagger
+ * /profile/me:
+ *   get:
+ *     summary: Get current user profile
+ *     tags: [Profile]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Profile retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Profile retrieved successfully"
+ *                   data:
+ *                     user:
+ *                       id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       email: "user@example.com"
+ *                       full_name: "John Doe"
+ *                       avatar_url: "https://example.com/avatar.jpg"
+ *                       is_online: true
+ *                       last_seen: "2023-10-01T12:00:00Z"
+ *                       created_at: "2023-10-01T12:00:00Z"
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         description: User not found
+ */
 router.get("/me", authenticateToken, getProfile);
+
+/**
+ * @swagger
+ * /profile/update:
+ *   put:
+ *     summary: Update user profile
+ *     tags: [Profile]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               full_name:
+ *                 type: string
+ *                 minLength: 2
+ *                 maxLength: 100
+ *                 example: "John Updated"
+ *               avatar_file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Image file for avatar (JPEG, PNG, WebP, max 5MB)
+ *               currentPassword:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: "currentpassword123"
+ *               newPassword:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: "newpassword123"
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "Profile updated successfully"
+ *                   data:
+ *                     user:
+ *                       id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       email: "user@example.com"
+ *                       full_name: "John Updated"
+ *                       avatar_url: "https://res.cloudinary.com/cloudname/image/upload/v1234567/avatar.jpg"
+ *                       is_online: true
+ *                       last_seen: "2023-10-01T12:00:00Z"
+ *                       created_at: "2023-10-01T12:00:00Z"
+ *       400:
+ *         description: Validation error or current password required
+ *       401:
+ *         description: Unauthorized or invalid current password
+ *       404:
+ *         description: User not found
+ *       502:
+ *         description: Image upload failed
+ */
 router.put(
     "/update",
     authenticateToken,
@@ -1217,22 +2905,55 @@ export default router;
 ```js
 import app from "./app.js";
 import dotenv from "dotenv";
-import {connectDb} from "./config/database.js";
-import {testCloudinary} from "./config/cloudinary.js";
+import { connectDb } from "./config/database.js";
+import { testCloudinary } from "./config/cloudinary.js";
 
+// Load environment variables
 dotenv.config();
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
 
 async function start() {
-    await connectDb();
-    await testCloudinary();
-    app.listen(PORT, () => {
-        console.log(`Server running on http://localhost:${PORT}`);
-    });
+    try {
+        console.log("Starting Chat App Server...");
+
+        // Connect to database
+        await connectDb();
+        console.log("Database connected successfully");
+
+        // Test Cloudinary configuration
+        await testCloudinary();
+        console.log("Cloudinary configured successfully");
+
+        // Start server
+        app.listen(PORT, () => {
+            console.log(`Server running on http://localhost:${PORT}`);
+            console.log(
+                `API Documentation: http://localhost:${PORT}/api-docs`
+            );
+            console.log(`Health Check: http://localhost:${PORT}/health`);
+            console.log(
+                `Environment: ${process.env.NODE_ENV || "development"}`
+            );
+        });
+    } catch (error) {
+        console.error("Failed to start server:", error);
+        process.exit(1);
+    }
 }
 
+process.on("uncaughtException", (error) => {
+    console.error("Uncaught Exception:", error);
+    process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+    console.error("Unhandled Rejection at:", promise, "reason:", reason);
+    process.exit(1);
+});
+
 start();
+
 ```
 
 ## File: services/authService.js

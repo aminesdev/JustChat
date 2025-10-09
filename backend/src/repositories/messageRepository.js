@@ -1,7 +1,6 @@
 import prisma from "../config/database.js";
 
 export const messageRepository = {
-
     create: async (messageData) => {
         return await prisma.message.create({
             data: messageData,
@@ -49,8 +48,8 @@ export const messageRepository = {
                 },
             },
             orderBy: { created_at: "desc" },
-            skip,
-            take: limit,
+            skip: parseInt(skip),
+            take: parseInt(limit),
         });
     },
 

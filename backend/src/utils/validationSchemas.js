@@ -79,6 +79,12 @@ export const messageValidation = {
         message_id: uuidSchema,
     }),
 
+    // ADD THIS NEW SCHEMA FOR ROUTES WITH BOTH PARAMS
+    messageParamsWithConversation: Joi.object({
+        conversation_id: uuidSchema,
+        message_id: uuidSchema,
+    }),
+
     queryParams: Joi.object({
         page: Joi.number().integer().min(1).default(1),
         limit: Joi.number().integer().min(1).max(100).default(50),
@@ -87,6 +93,10 @@ export const messageValidation = {
 
 export const readReceiptValidation = {
     markAsRead: Joi.object({
+        message_id: uuidSchema,
+    }),
+    markAsReadWithConversation: Joi.object({
+        conversation_id: uuidSchema,
         message_id: uuidSchema,
     }),
 };
