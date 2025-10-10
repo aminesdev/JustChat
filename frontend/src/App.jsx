@@ -1,5 +1,5 @@
 import {BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom';
-import {useAuthStore} from './store/authStore';
+import {useAuthStore} from './stores/authStore';
 import Login from './pages/Auth/Login';
 import Signup from './pages/Auth/Signup';
 import Chat from './pages/Chat/Chat';
