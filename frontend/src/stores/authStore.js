@@ -9,6 +9,7 @@ export const useAuthStore = create(
             accessToken: null,
             refreshToken: null,
             isAuthenticated: false,
+            isLoading: false,
 
             // Actions
             setAuth: (userData) => {
@@ -18,12 +19,14 @@ export const useAuthStore = create(
                     accessToken,
                     refreshToken,
                     isAuthenticated: true,
+                    isLoading: false,
                 });
 
-                // Also store in localStorage for API interceptor
                 localStorage.setItem("accessToken", accessToken);
                 localStorage.setItem("refreshToken", refreshToken);
             },
+
+            setLoading: (loading) => set({ isLoading: loading }),
 
             logout: () => {
                 set({
@@ -31,9 +34,9 @@ export const useAuthStore = create(
                     accessToken: null,
                     refreshToken: null,
                     isAuthenticated: false,
+                    isLoading: false,
                 });
 
-                // Clear localStorage
                 localStorage.removeItem("accessToken");
                 localStorage.removeItem("refreshToken");
             },
@@ -43,13 +46,7 @@ export const useAuthStore = create(
             },
         }),
         {
-            name: "auth-storage", // name for the storage
-            partialize: (state) => ({
-                user: state.user,
-                accessToken: state.accessToken,
-                refreshToken: state.refreshToken,
-                isAuthenticated: state.isAuthenticated,
-            }),
+            name: "auth-storage",
         }
     )
 );

@@ -1,35 +1,35 @@
 import {BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom';
-import {useAuthStore} from './stores/authStore';
+// import { useAuthStore } from './store/authStore'; // Comment out for testing
 import Login from './pages/Auth/Login';
-import Signup from './pages/Auth/Signup';
-import Chat from './pages/Chat/Chat';
-import Profile from './pages/Profile/Profile';
 
 function App() {
-    const {isAuthenticated} = useAuthStore();
+    // const { isAuthenticated } = useAuthStore(); // Comment out for testing
+
+    // For testing, set isAuthenticated to false to see login page
+    const isAuthenticated = false;
 
     return (
         <Router>
-            <div className="min-h-screen bg-gray-50">
+            <div className="min-h-screen bg-background">
                 <Routes>
                     {/* Public routes */}
                     <Route
                         path="/login"
-                        element={!isAuthenticated ? <Login /> : <Navigate to="/chat" />}
+                        element={!isAuthenticated ? <Login /> : <Navigate to="/" />}
                     />
                     <Route
                         path="/signup"
-                        element={!isAuthenticated ? <Signup /> : <Navigate to="/chat" />}
+                        element={!isAuthenticated ? <div>Signup Page Coming Soon</div> : <Navigate to="/" />}
                     />
 
-                    {/* Protected routes */}
+                    {/* Protected routes - show placeholder for now */}
                     <Route
                         path="/chat"
-                        element={isAuthenticated ? <Chat /> : <Navigate to="/login" />}
+                        element={isAuthenticated ? <div>Chat Page Coming Soon</div> : <Navigate to="/login" />}
                     />
                     <Route
                         path="/profile"
-                        element={isAuthenticated ? <Profile /> : <Navigate to="/login" />}
+                        element={isAuthenticated ? <div>Profile Page Coming Soon</div> : <Navigate to="/login" />}
                     />
 
                     {/* Default route */}
