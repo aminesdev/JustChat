@@ -1,18 +1,45 @@
+import {BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom';
+import {useAuthStore} from './store/authStore';
+import Login from './pages/Auth/Login';
+import Signup from './pages/Auth/Signup';
+import Chat from './pages/Chat/Chat';
+import Profile from './pages/Profile/Profile';
+
 function App() {
+    const {isAuthenticated} = useAuthStore();
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-            <div className="bg-white p-8 rounded-lg shadow-2xl max-w-md w-full">
-                <h1 className="text-3xl font-bold text-gray-800 text-center mb-6">
-                    Chat App
-                </h1>
-                <p className="text-gray-600 text-center mb-4">
-                    Tailwind CSS is working! 🎉
-                </p>
-                <button className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg transition duration-200">
-                    Get Started
-                </button>
+        <Router>
+            <div className="min-h-screen bg-gray-50">
+                <Routes>
+                    {/* Public routes */}
+                    <Route
+                        path="/login"
+                        element={!isAuthenticated ? <Login /> : <Navigate to="/chat" />}
+                    />
+                    <Route
+                        path="/signup"
+                        element={!isAuthenticated ? <Signup /> : <Navigate to="/chat" />}
+                    />
+
+                    {/* Protected routes */}
+                    <Route
+                        path="/chat"
+                        element={isAuthenticated ? <Chat /> : <Navigate to="/login" />}
+                    />
+                    <Route
+                        path="/profile"
+                        element={isAuthenticated ? <Profile /> : <Navigate to="/login" />}
+                    />
+
+                    {/* Default route */}
+                    <Route
+                        path="/"
+                        element={<Navigate to={isAuthenticated ? "/chat" : "/login"} />}
+                    />
+                </Routes>
             </div>
-        </div>
+        </Router>
     );
 }
 
