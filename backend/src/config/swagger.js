@@ -731,6 +731,14 @@ A real-time chat application backend with complete messaging features.
                 description: "User profile management",
             },
             {
+                name: "Users",
+                description: "User search and management",
+            },
+            {
+                name: "Upload",
+                description: "File upload endpoints",
+            },
+            {
                 name: "Conversations",
                 description: "Conversation management",
             },

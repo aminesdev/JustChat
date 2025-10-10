@@ -4,6 +4,7 @@ import {
     getConversationService,
     getConversationParticipantsService,
     deleteConversationService,
+    checkConversationService,
 } from "../services/conversationService.js";
 import { successResponse, createdResponse } from "../utils/responseHandler.js";
 import { handleConversationError } from "../utils/errorHandler.js";
@@ -75,6 +76,22 @@ export const deleteConversation = async (req, res) => {
         const result = await deleteConversationService(id, user_id);
 
         successResponse(res, result.message);
+    } catch (error) {
+        handleConversationError(res, error);
+    }
+};
+
+export const checkConversation = async (req, res) => {
+    try {
+        const user1_id = req.user.userId;
+        const { user2_id } = req.params;
+
+        const conversation = await checkConversationService(user1_id, user2_id);
+
+        successResponse(res, "Conversation check completed", {
+            exists: !!conversation,
+            conversation: conversation || null,
+        });
     } catch (error) {
         handleConversationError(res, error);
     }

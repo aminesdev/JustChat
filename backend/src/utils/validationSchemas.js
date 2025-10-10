@@ -50,6 +50,10 @@ export const conversationValidation = {
     conversationParams: Joi.object({
         id: uuidSchema,
     }),
+
+    checkConversation: Joi.object({
+        user2_id: uuidSchema,
+    }),
 };
 
 export const messageValidation = {
@@ -98,5 +102,24 @@ export const readReceiptValidation = {
     markAsReadWithConversation: Joi.object({
         conversation_id: uuidSchema,
         message_id: uuidSchema,
+    }),
+};
+
+export const userValidation = {
+    searchQuery: Joi.object({
+        q: Joi.string().min(2).max(100).required(),
+        limit: Joi.number().integer().min(1).max(50).default(10),
+    }),
+
+    updateOnlineStatus: Joi.object({
+        is_online: Joi.boolean().required(),
+    }),
+
+    getAllUsers: Joi.object({
+        limit: Joi.number().integer().min(1).max(100).default(50),
+    }),
+
+    userIdParams: Joi.object({
+        id: uuidSchema,
     }),
 };

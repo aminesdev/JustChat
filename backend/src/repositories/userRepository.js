@@ -2,6 +2,24 @@ import prisma from "../config/database.js";
 
 export const userRepository = {
     
+    findMany: async (excludeUserId, limit = 50) => {
+        return await prisma.user.findMany({
+            where: {
+                id: { not: excludeUserId },
+            },
+            select: {
+                id: true,
+                email: true,
+                full_name: true,
+                avatar_url: true,
+                is_online: true,
+                last_seen: true,
+            },
+            take: parseInt(limit),
+            orderBy: [{ is_online: "desc" }, { full_name: "asc" }],
+        });
+    },
+
     findByEmail: async (email) => {
         return await prisma.user.findUnique({
             where: { email },
@@ -44,6 +62,55 @@ export const userRepository = {
                 email: true,
                 full_name: true,
                 avatar_url: true,
+                is_online: true,
+                last_seen: true,
+            },
+        });
+    },
+
+    searchUsers: async (query, currentUserId, limit = 10) => {
+        return await prisma.user.findMany({
+            where: {
+                AND: [
+                    { id: { not: currentUserId } }, // Exclude current user
+                    {
+                        OR: [
+                            {
+                                full_name: {
+                                    contains: query,
+                                    mode: "insensitive",
+                                },
+                            },
+                            { email: { contains: query, mode: "insensitive" } },
+                        ],
+                    },
+                ],
+            },
+            select: {
+                id: true,
+                email: true,
+                full_name: true,
+                avatar_url: true,
+                is_online: true,
+                last_seen: true,
+            },
+            take: parseInt(limit),
+            orderBy: [
+                { is_online: "desc" }, // Online users first
+                { full_name: "asc" },
+            ],
+        });
+    },
+
+    updateOnlineStatus: async (userId, isOnline) => {
+        return await prisma.user.update({
+            where: { id: userId },
+            data: {
+                is_online: isOnline,
+                last_seen: new Date(),
+            },
+            select: {
+                id: true,
                 is_online: true,
                 last_seen: true,
             },

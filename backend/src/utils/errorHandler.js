@@ -160,3 +160,24 @@ export const handleMessageError = (res, error) => {
         errorResponse(res, "Internal server error");
     }
 };
+
+export const handleUserError = (res, error) => {
+    const errorMap = {
+        SEARCH_QUERY_REQUIRED: () =>
+            badRequestResponse(res, "Search query is required"),
+        SEARCH_QUERY_TOO_SHORT: () =>
+            badRequestResponse(
+                res,
+                "Search query must be at least 2 characters"
+            ),
+        USER_NOT_FOUND: () => notFoundResponse(res, "User not found"),
+    };
+
+    const handler = errorMap[error.message];
+    if (handler) {
+        handler();
+    } else {
+        console.error("User error:", error);
+        errorResponse(res, "Internal server error");
+    }
+};

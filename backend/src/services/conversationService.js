@@ -71,3 +71,14 @@ export const deleteConversationService = async (conversation_id, user_id) => {
     await conversationRepository.delete(conversation_id);
     return { success: true, message: "Conversation deleted successfully" };
 };
+
+export const checkConversationService = async (user1_id, user2_id) => {
+    const [sortedUser1, sortedUser2] = [user1_id, user2_id].sort();
+
+    const conversation = await conversationRepository.findByParticipants(
+        sortedUser1,
+        sortedUser2
+    );
+
+    return conversation;
+};

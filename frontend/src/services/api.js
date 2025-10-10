@@ -9,6 +9,7 @@ const api = axios.create({
     },
 });
 
+// Add token to requests automatically
 api.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem("accessToken");
@@ -22,6 +23,7 @@ api.interceptors.request.use(
     }
 );
 
+// Handle token refresh on 401 responses
 api.interceptors.response.use(
     (response) => response,
     async (error) => {
@@ -47,6 +49,7 @@ api.interceptors.response.use(
                     return api(originalRequest);
                 }
             } catch (refreshError) {
+                // Redirect to login if refresh fails
                 localStorage.removeItem("accessToken");
                 localStorage.removeItem("refreshToken");
                 window.location.href = "/login";
