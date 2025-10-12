@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
+import { getErrorMessage } from "../utils/errorUtils";
+import { sortConversations, getOtherUser } from "../utils/chatUtils";
 
 export const useConversationStore = create((set, get) => ({
     conversations: new Map(),
@@ -14,24 +16,24 @@ export const useConversationStore = create((set, get) => ({
             const response = await chatService.getConversations();
             const conversations = response.data.data.conversations;
 
+            const sortedConversations = sortConversations(conversations);
+
             set((state) => {
                 const newConversations = new Map(state.conversations);
-                const conversationsList = [];
 
-                conversations.forEach((conv) => {
+                sortedConversations.forEach((conv) => {
                     newConversations.set(conv.id, conv);
-                    conversationsList.push(conv);
                 });
 
                 return {
                     conversations: newConversations,
-                    conversationsList,
+                    conversationsList: sortedConversations,
                     isLoading: false,
                 };
             });
         } catch (error) {
             const errorMessage =
-                error.response?.data?.msg || "Failed to load conversations";
+                getErrorMessage(error) || "Failed to load conversations";
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
@@ -47,10 +49,10 @@ export const useConversationStore = create((set, get) => ({
                 const newConversations = new Map(state.conversations);
                 newConversations.set(conversation.id, conversation);
 
-                const conversationsList = [
+                const conversationsList = sortConversations([
                     conversation,
                     ...state.conversationsList,
-                ];
+                ]);
 
                 return {
                     conversations: newConversations,
@@ -63,7 +65,7 @@ export const useConversationStore = create((set, get) => ({
             return conversation;
         } catch (error) {
             const errorMessage =
-                error.response?.data?.msg || "Failed to create conversation";
+                getErrorMessage(error) || "Failed to create conversation";
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
@@ -98,17 +100,16 @@ export const useConversationStore = create((set, get) => ({
             const newConversations = new Map(state.conversations);
             newConversations.set(conversationId, updatedConversation);
 
-            const conversationsList = state.conversationsList
-                .filter((conv) => conv.id !== conversationId)
-                .sort(
-                    (a, b) =>
-                        new Date(b.last_message?.created_at || b.created_at) -
-                        new Date(a.last_message?.created_at || a.created_at)
-                );
+            const conversationsList = sortConversations([
+                updatedConversation,
+                ...state.conversationsList.filter(
+                    (conv) => conv.id !== conversationId
+                ),
+            ]);
 
             return {
                 conversations: newConversations,
-                conversationsList: [updatedConversation, ...conversationsList],
+                conversationsList,
             };
         });
     },
@@ -122,4 +123,13 @@ export const useConversationStore = create((set, get) => ({
 
     getConversationById: (conversationId) =>
         get().conversations.get(conversationId),
+
+    getCurrentOtherUser: () => {
+        const state = get();
+        const conversation = state.conversations.get(
+            state.currentConversationId
+        );
+        const currentUserId = useAuthStore.getState().user?.id;
+        return conversation ? getOtherUser(conversation, currentUserId) : null;
+    },
 }));

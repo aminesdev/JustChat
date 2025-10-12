@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { authService } from "../services/authService";
+import { storage } from "../utils/storageUtils";
+import { getErrorMessage } from "../utils/errorUtils";
 
 export const useAuthStore = create(
     persist(
@@ -31,7 +33,7 @@ export const useAuthStore = create(
                     return response;
                 } catch (error) {
                     const errorMessage =
-                        error.response?.data?.msg || "Login failed";
+                        getErrorMessage(error) || "Login failed";
                     set({ isLoading: false, error: errorMessage });
                     throw new Error(errorMessage);
                 }
@@ -56,7 +58,7 @@ export const useAuthStore = create(
                     return response;
                 } catch (error) {
                     const errorMessage =
-                        error.response?.data?.msg || "Signup failed";
+                        getErrorMessage(error) || "Signup failed";
                     set({ isLoading: false, error: errorMessage });
                     throw new Error(errorMessage);
                 }
@@ -72,6 +74,7 @@ export const useAuthStore = create(
                 } catch (error) {
                     console.error("Logout API call failed:", error);
                 } finally {
+                    storage.clear();
                     set({
                         user: null,
                         accessToken: null,

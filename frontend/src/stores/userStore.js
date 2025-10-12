@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { userService } from "../services/userService";
+import { getErrorMessage } from "../utils/errorUtils";
+import { truncateText } from "../utils/stringUtils";
 
 export const useUserStore = create((set, get) => ({
     currentUser: null,
@@ -26,7 +28,7 @@ export const useUserStore = create((set, get) => ({
             });
         } catch (error) {
             const errorMessage =
-                error.response?.data?.msg || "Failed to load profile";
+                getErrorMessage(error) || "Failed to load profile";
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
@@ -51,21 +53,22 @@ export const useUserStore = create((set, get) => ({
             return updatedUser;
         } catch (error) {
             const errorMessage =
-                error.response?.data?.msg || "Failed to update profile";
+                getErrorMessage(error) || "Failed to update profile";
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
     },
 
     searchUsers: async (query, limit = 10) => {
-        if (!query || query.trim().length < 2) {
+        const trimmedQuery = query?.trim();
+        if (!trimmedQuery || trimmedQuery.length < 2) {
             set({ searchedUsers: [] });
             return [];
         }
 
         set({ isLoading: true, error: null });
         try {
-            const response = await userService.searchUsers(query.trim(), limit);
+            const response = await userService.searchUsers(trimmedQuery, limit);
             const users = response.data.data.users;
 
             set((state) => {
@@ -81,7 +84,7 @@ export const useUserStore = create((set, get) => ({
             return users;
         } catch (error) {
             const errorMessage =
-                error.response?.data?.msg || "Failed to search users";
+                getErrorMessage(error) || "Failed to search users";
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
@@ -108,7 +111,7 @@ export const useUserStore = create((set, get) => ({
             return user;
         } catch (error) {
             const errorMessage =
-                error.response?.data?.msg || "Failed to load user";
+                getErrorMessage(error) || "Failed to load user";
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
@@ -159,4 +162,8 @@ export const useUserStore = create((set, get) => ({
 
     getUserById: (userId) => get().users.get(userId),
     isUserOnline: (userId) => get().onlineUsers.has(userId),
+    getUserDisplayName: (userId) => {
+        const user = get().users.get(userId);
+        return user ? truncateText(user.full_name, 20) : "Unknown User";
+    },
 }));

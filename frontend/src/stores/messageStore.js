@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
 import { useAuthStore } from "./authStore";
+import { getErrorMessage } from "../utils/errorUtils";
+import { validateMessage, sanitizeMessage } from "../utils/validationUtils";
+import { groupMessagesByDate } from "../utils/chatUtils";
 
 export const useMessageStore = create((set, get) => ({
     messages: new Map(),
@@ -48,19 +51,31 @@ export const useMessageStore = create((set, get) => ({
             });
         } catch (error) {
             const errorMessage =
-                error.response?.data?.msg || "Failed to load messages";
+                getErrorMessage(error) || "Failed to load messages";
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
     },
 
     sendMessage: async (conversationId, messageData) => {
+        // Validate message
+        const validationError = validateMessage(messageData.message_text);
+        if (validationError) {
+            throw new Error(validationError);
+        }
+
         const tempId = `temp-${Date.now()}`;
         const { user } = useAuthStore.getState();
 
+        // Sanitize message text
+        const sanitizedData = {
+            ...messageData,
+            message_text: sanitizeMessage(messageData.message_text),
+        };
+
         const optimisticMessage = {
             id: tempId,
-            ...messageData,
+            ...sanitizedData,
             conversation_id: conversationId,
             sender_id: user.id,
             sender: user,
@@ -87,7 +102,7 @@ export const useMessageStore = create((set, get) => ({
         try {
             const response = await chatService.sendMessage(
                 conversationId,
-                messageData
+                sanitizedData
             );
             const realMessage = response.data.data.message;
 
@@ -132,8 +147,7 @@ export const useMessageStore = create((set, get) => ({
 
                 return {
                     messages: newMessages,
-                    error:
-                        error.response?.data?.msg || "Failed to send message",
+                    error: getErrorMessage(error) || "Failed to send message",
                 };
             });
             throw error;
@@ -218,5 +232,10 @@ export const useMessageStore = create((set, get) => ({
     getPagination: (conversationId) => {
         const data = get().messages.get(conversationId);
         return data?.pagination || { hasMore: true };
+    },
+
+    getGroupedMessages: (conversationId) => {
+        const messages = get().getMessages(conversationId);
+        return groupMessagesByDate(messages);
     },
 }));
