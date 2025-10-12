@@ -6,8 +6,7 @@ export const uploadService = {
         validateFile(file);
 
         let processedFile = file;
-
-        // Compress images over 1MB
+        
         if (file.size > 1024 * 1024) {
             processedFile = await compressImage(file, 0.7);
         }
