@@ -2,20 +2,18 @@ import { create } from "zustand";
 import { userService } from "../services/userService";
 
 export const useUserStore = create((set, get) => ({
-    // State
     currentUser: null,
-    users: new Map(), // userId -> user
+    users: new Map(),
     searchedUsers: [],
     onlineUsers: new Set(),
     isLoading: false,
     error: null,
 
-    // Actions - User data management
     loadCurrentUser: async () => {
         set({ isLoading: true, error: null });
         try {
             const response = await userService.getProfile();
-            const user = response.data.user;
+            const user = response.data.data.user;
 
             set((state) => {
                 const newUsers = new Map(state.users);
@@ -38,7 +36,7 @@ export const useUserStore = create((set, get) => ({
         set({ isLoading: true, error: null });
         try {
             const response = await userService.updateProfile(profileData);
-            const updatedUser = response.data.user;
+            const updatedUser = response.data.data.user;
 
             set((state) => {
                 const newUsers = new Map(state.users);
@@ -49,10 +47,6 @@ export const useUserStore = create((set, get) => ({
                     isLoading: false,
                 };
             });
-
-            // Update auth store if needed
-            const { updateUserProfile } = useAuthStore.getState();
-            updateUserProfile(updatedUser);
 
             return updatedUser;
         } catch (error) {
@@ -72,9 +66,8 @@ export const useUserStore = create((set, get) => ({
         set({ isLoading: true, error: null });
         try {
             const response = await userService.searchUsers(query.trim(), limit);
-            const users = response.data.users;
+            const users = response.data.data.users;
 
-            // Cache users
             set((state) => {
                 const newUsers = new Map(state.users);
                 users.forEach((user) => newUsers.set(user.id, user));
@@ -101,7 +94,7 @@ export const useUserStore = create((set, get) => ({
         set({ isLoading: true, error: null });
         try {
             const response = await userService.getUserById(userId);
-            const user = response.data.user;
+            const user = response.data.data.user;
 
             set((state) => {
                 const newUsers = new Map(state.users);
@@ -161,11 +154,9 @@ export const useUserStore = create((set, get) => ({
         });
     },
 
-    // Utility actions
     clearSearch: () => set({ searchedUsers: [] }),
     clearError: () => set({ error: null }),
 
-    // Selectors
     getUserById: (userId) => get().users.get(userId),
     isUserOnline: (userId) => get().onlineUsers.has(userId),
 }));

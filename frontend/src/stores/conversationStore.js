@@ -2,19 +2,17 @@ import { create } from "zustand";
 import { chatService } from "../services/chatService";
 
 export const useConversationStore = create((set, get) => ({
-    // State
-    conversations: new Map(), // conversationId -> conversation
-    conversationsList: [], // Ordered list for UI
+    conversations: new Map(),
+    conversationsList: [],
     currentConversationId: null,
     isLoading: false,
     error: null,
 
-    // Actions - Conversation management
     loadConversations: async () => {
         set({ isLoading: true, error: null });
         try {
             const response = await chatService.getConversations();
-            const conversations = response.data.conversations;
+            const conversations = response.data.data.conversations;
 
             set((state) => {
                 const newConversations = new Map(state.conversations);
@@ -43,7 +41,7 @@ export const useConversationStore = create((set, get) => ({
         set({ isLoading: true, error: null });
         try {
             const response = await chatService.createConversation(user2Id);
-            const conversation = response.data.conversation;
+            const conversation = response.data.data.conversation;
 
             set((state) => {
                 const newConversations = new Map(state.conversations);
@@ -72,7 +70,6 @@ export const useConversationStore = create((set, get) => ({
     },
 
     getOrCreateConversation: async (user2Id) => {
-        // Check if conversation already exists
         const existingConversation = get().conversationsList.find(
             (conv) => conv.user1_id === user2Id || conv.user2_id === user2Id
         );
@@ -82,7 +79,6 @@ export const useConversationStore = create((set, get) => ({
             return existingConversation;
         }
 
-        // Create new conversation
         return await get().createConversation(user2Id);
     },
 
@@ -102,7 +98,6 @@ export const useConversationStore = create((set, get) => ({
             const newConversations = new Map(state.conversations);
             newConversations.set(conversationId, updatedConversation);
 
-            // Reorder conversations list (most recent first)
             const conversationsList = state.conversationsList
                 .filter((conv) => conv.id !== conversationId)
                 .sort(
@@ -118,10 +113,8 @@ export const useConversationStore = create((set, get) => ({
         });
     },
 
-    // Utility actions
     clearError: () => set({ error: null }),
 
-    // Selectors
     getCurrentConversation: () => {
         const state = get();
         return state.conversations.get(state.currentConversationId);

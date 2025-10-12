@@ -5,7 +5,6 @@ import { authService } from "../services/authService";
 export const useAuthStore = create(
     persist(
         (set, get) => ({
-            // State
             user: null,
             accessToken: null,
             refreshToken: null,
@@ -13,12 +12,12 @@ export const useAuthStore = create(
             isLoading: false,
             error: null,
 
-            // Actions - Pure authentication
             login: async (credentials) => {
                 set({ isLoading: true, error: null });
                 try {
                     const response = await authService.login(credentials);
-                    const { user, accessToken, refreshToken } = response.data;
+                    const { user, accessToken, refreshToken } =
+                        response.data.data;
 
                     set({
                         user,
@@ -42,7 +41,8 @@ export const useAuthStore = create(
                 set({ isLoading: true, error: null });
                 try {
                     const response = await authService.signup(userData);
-                    const { user, accessToken, refreshToken } = response.data;
+                    const { user, accessToken, refreshToken } =
+                        response.data.data;
 
                     set({
                         user,
@@ -92,7 +92,7 @@ export const useAuthStore = create(
                     const response = await authService.refreshToken({
                         refreshToken,
                     });
-                    const { accessToken } = response.data;
+                    const { accessToken } = response.data.data;
                     set({ accessToken, error: null });
                     return accessToken;
                 } catch (error) {

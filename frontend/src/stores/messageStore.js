@@ -1,13 +1,12 @@
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
+import { useAuthStore } from "./authStore";
 
 export const useMessageStore = create((set, get) => ({
-    // State
-    messages: new Map(), // conversationId -> { messages: [], pagination: {} }
+    messages: new Map(),
     isLoading: false,
     error: null,
 
-    // Actions - Message management
     loadMessages: async (conversationId, page = 1, limit = 50) => {
         set({ isLoading: true, error: null });
         try {
@@ -16,7 +15,7 @@ export const useMessageStore = create((set, get) => ({
                 page,
                 limit
             );
-            const { messages, pagination } = response.data;
+            const { messages, pagination } = response.data.data;
 
             set((state) => {
                 const existingData = state.messages.get(conversationId) || {
@@ -25,7 +24,6 @@ export const useMessageStore = create((set, get) => ({
                 };
                 const existingMessages = existingData.messages;
 
-                // Merge messages, avoiding duplicates
                 const messageMap = new Map();
                 [...existingMessages, ...messages].forEach((msg) =>
                     messageMap.set(msg.id, msg)
@@ -60,7 +58,6 @@ export const useMessageStore = create((set, get) => ({
         const tempId = `temp-${Date.now()}`;
         const { user } = useAuthStore.getState();
 
-        // Optimistic update
         const optimisticMessage = {
             id: tempId,
             ...messageData,
@@ -92,9 +89,8 @@ export const useMessageStore = create((set, get) => ({
                 conversationId,
                 messageData
             );
-            const realMessage = response.data.message;
+            const realMessage = response.data.data.message;
 
-            // Replace optimistic message
             set((state) => {
                 const existingData = state.messages.get(conversationId) || {
                     messages: [],
@@ -113,14 +109,12 @@ export const useMessageStore = create((set, get) => ({
                 return { messages: newMessages };
             });
 
-            // Update conversation last message
             const { updateConversationLastMessage } =
                 useConversationStore.getState();
             updateConversationLastMessage(conversationId, realMessage);
 
             return realMessage;
         } catch (error) {
-            // Rollback optimistic update
             set((state) => {
                 const existingData = state.messages.get(conversationId) || {
                     messages: [],
@@ -206,7 +200,6 @@ export const useMessageStore = create((set, get) => ({
         });
     },
 
-    // Utility actions
     clearMessages: (conversationId) => {
         set((state) => {
             const newMessages = new Map(state.messages);
@@ -217,7 +210,6 @@ export const useMessageStore = create((set, get) => ({
 
     clearError: () => set({ error: null }),
 
-    // Selectors
     getMessages: (conversationId) => {
         const data = get().messages.get(conversationId);
         return data?.messages || [];
