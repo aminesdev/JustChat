@@ -91,6 +91,59 @@ export async function connectDb() {
 
 ```
 
+## File: config/oauth.js
+```js
+import passport from "passport";
+import { Strategy as GitHubStrategy } from "passport-github2";
+import { handleGitHubUser } from "../utils/oauthHelpers.js";
+
+// Serialize user for sessions
+passport.serializeUser((user, done) => {
+    done(null, user.id);
+});
+
+passport.deserializeUser(async (id, done) => {
+    try {
+        const user = await userRepository.findById(id);
+        done(null, user);
+    } catch (error) {
+        done(error, null);
+    }
+});
+
+// GitHub Strategy
+passport.use(
+    new GitHubStrategy(
+        {
+            clientID: process.env.GITHUB_CLIENT_ID,
+            clientSecret: process.env.GITHUB_CLIENT_SECRET,
+            callbackURL: "/api/auth/github/callback",
+            scope: ["user:email"], // Request email scope
+        },
+        async (accessToken, refreshToken, profile, done) => {
+            try {
+                console.log("GitHub profile received:", {
+                    id: profile.id,
+                    username: profile.username,
+                    displayName: profile.displayName,
+                    emails: profile.emails,
+                    photos: profile.photos,
+                });
+
+                const user = await handleGitHubUser(profile);
+                done(null, user);
+            } catch (error) {
+                console.error("GitHub OAuth error:", error);
+                done(error, null);
+            }
+        }
+    )
+);
+
+export default passport;
+
+```
+
 ## File: config/swagger.js
 ```js
 import swaggerJsdoc from "swagger-jsdoc";
@@ -826,6 +879,14 @@ A real-time chat application backend with complete messaging features.
                 description: "User profile management",
             },
             {
+                name: "Users",
+                description: "User search and management",
+            },
+            {
+                name: "Upload",
+                description: "File upload endpoints",
+            },
+            {
                 name: "Conversations",
                 description: "Conversation management",
             },
@@ -932,6 +993,7 @@ import {
     getConversationService,
     getConversationParticipantsService,
     deleteConversationService,
+    checkConversationService,
 } from "../services/conversationService.js";
 import { successResponse, createdResponse } from "../utils/responseHandler.js";
 import { handleConversationError } from "../utils/errorHandler.js";
@@ -1003,6 +1065,22 @@ export const deleteConversation = async (req, res) => {
         const result = await deleteConversationService(id, user_id);
 
         successResponse(res, result.message);
+    } catch (error) {
+        handleConversationError(res, error);
+    }
+};
+
+export const checkConversation = async (req, res) => {
+    try {
+        const user1_id = req.user.userId;
+        const { user2_id } = req.params;
+
+        const conversation = await checkConversationService(user1_id, user2_id);
+
+        successResponse(res, "Conversation check completed", {
+            exists: !!conversation,
+            conversation: conversation || null,
+        });
     } catch (error) {
         handleConversationError(res, error);
     }
@@ -1157,6 +1235,127 @@ export const getUnreadCount = async (req, res) => {
 
 ```
 
+## File: controllers/oauthController.js
+```js
+import passport from "../config/oauth.js";
+import { oauthService } from "../services/oauthService.js";
+import { successResponse } from "../utils/responseHandler.js";
+import { handleOAuthError } from "../utils/errorHandler.js";
+
+// GitHub OAuth initiation
+export const githubAuth = passport.authenticate("github", {
+    scope: ["user:email"],
+});
+
+// GitHub OAuth callback
+export const githubCallback = (req, res, next) => {
+    try {
+        // Validate callback parameters first
+        oauthService.validateCallbackParams(req);
+
+        passport.authenticate(
+            "github",
+            { session: false },
+            (err, user, info) => {
+                handleOAuthCallback(req, res, err, user, info);
+            }
+        )(req, res, next);
+    } catch (error) {
+        console.error("OAuth callback validation error:", error);
+        handleOAuthError(res, error);
+    }
+};
+
+// Handle OAuth callback
+const handleOAuthCallback = (req, res, err, user, info) => {
+    if (err) {
+        console.error("OAuth callback error:", err);
+        return res.redirect(
+            `${process.env.CLIENT_URL}${
+                process.env.CLIENT_ERROR_REDIRECT || "/login"
+            }?error=oauth_failed&message=${encodeURIComponent(err.message)}`
+        );
+    }
+
+    if (!user) {
+        return res.redirect(
+            `${process.env.CLIENT_URL}${
+                process.env.CLIENT_ERROR_REDIRECT || "/login"
+            }?error=authentication_failed`
+        );
+    }
+
+    try {
+        const config = oauthService.validateOAuthConfig();
+
+        // Redirect to frontend with tokens as URL parameters
+        const redirectUrl = `${config.client.url}${
+            config.client.successRedirect
+        }?accessToken=${user.accessToken}&refreshToken=${
+            user.refreshToken
+        }&user=${encodeURIComponent(JSON.stringify(user.user))}`;
+
+        res.redirect(redirectUrl);
+    } catch (redirectError) {
+        console.error("Redirect error:", redirectError);
+        res.redirect(
+            `${process.env.CLIENT_URL}${
+                process.env.CLIENT_ERROR_REDIRECT || "/login"
+            }?error=redirect_failed`
+        );
+    }
+};
+
+// Get OAuth providers configuration
+export const getOAuthProviders = (req, res) => {
+    try {
+        const config = oauthService.getOAuthConfig();
+
+        successResponse(res, "OAuth providers retrieved successfully", config);
+    } catch (error) {
+        handleOAuthError(res, error);
+    }
+};
+
+// Check OAuth health status
+export const getOAuthHealth = (req, res) => {
+    try {
+        const config = oauthService.validateOAuthConfig();
+
+        successResponse(res, "OAuth configuration is healthy", {
+            healthy: true,
+            github: config.github.enabled,
+            clientUrl: config.client.url,
+            successRedirect: config.client.successRedirect,
+            errorRedirect: config.client.errorRedirect,
+            timestamp: new Date().toISOString(),
+            warnings: config.warnings,
+        });
+    } catch (error) {
+        successResponse(res, "OAuth configuration has issues", {
+            healthy: false,
+            error: error.message,
+            timestamp: new Date().toISOString(),
+        });
+    }
+};
+
+// Check if OAuth is enabled
+export const getOAuthStatus = (req, res) => {
+    try {
+        const isEnabled = oauthService.isOAuthEnabled();
+
+        successResponse(res, "OAuth status retrieved", {
+            enabled: isEnabled,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (error) {
+        handleOAuthError(res, error);
+    }
+};
+
+```
+
 ## File: controllers/profileController.js
 ```js
 import {
@@ -1197,6 +1396,106 @@ export const getProfile = async (req, res) => {
         successResponse(res, "Profile retrieved successfully", { user });
     } catch (error) {
         handleProfileError(res, error);
+    }
+};
+
+```
+
+## File: controllers/uploadController.js
+```js
+import { uploadImageService } from "../services/fileStorageService.js";
+import { successResponse } from "../utils/responseHandler.js";
+import { handleCloudinaryError } from "../utils/errorHandler.js";
+
+export const uploadImage = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                msg: "No image file provided",
+            });
+        }
+
+        const folder = req.body.type === "profile" ? "profiles" : "messages";
+        const result = await uploadImageService(req.file.buffer, folder);
+
+        successResponse(res, "Image uploaded successfully", {
+            url: result.secure_url,
+            public_id: result.public_id,
+        });
+    } catch (error) {
+        handleCloudinaryError(res, error);
+    }
+};
+
+```
+
+## File: controllers/userController.js
+```js
+import {
+    searchUsersService,
+    updateOnlineStatusService,
+    getAllUsersService,
+    getUserByIdService,
+} from "../services/userService.js";
+import { successResponse } from "../utils/responseHandler.js";
+import { handleUserError } from "../utils/errorHandler.js";
+
+export const searchUsers = async (req, res) => {
+    try {
+        const currentUserId = req.user.userId;
+        const { q, limit = 10 } = req.query;
+
+        const users = await searchUsersService(q, currentUserId, limit);
+
+        successResponse(res, "Users retrieved successfully", {
+            users,
+            count: users.length,
+        });
+    } catch (error) {
+        handleUserError(res, error);
+    }
+};
+
+export const getAllUsers = async (req, res) => {
+    try {
+        const currentUserId = req.user.userId;
+        const { limit = 50 } = req.query;
+
+        const users = await getAllUsersService(currentUserId, limit);
+
+        successResponse(res, "Users retrieved successfully", {
+            users,
+            count: users.length,
+        });
+    } catch (error) {
+        handleUserError(res, error);
+    }
+};
+
+export const getUserById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await getUserByIdService(id);
+
+        successResponse(res, "User retrieved successfully", { user });
+    } catch (error) {
+        handleUserError(res, error);
+    }
+};
+
+export const updateOnlineStatus = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { is_online } = req.body;
+
+        const updatedUser = await updateOnlineStatusService(userId, is_online);
+
+        successResponse(res, "Online status updated successfully", {
+            user: updatedUser,
+        });
+    } catch (error) {
+        handleUserError(res, error);
     }
 };
 
@@ -1787,6 +2086,24 @@ import prisma from "../config/database.js";
 
 export const userRepository = {
     
+    findMany: async (excludeUserId, limit = 50) => {
+        return await prisma.user.findMany({
+            where: {
+                id: { not: excludeUserId },
+            },
+            select: {
+                id: true,
+                email: true,
+                full_name: true,
+                avatar_url: true,
+                is_online: true,
+                last_seen: true,
+            },
+            take: parseInt(limit),
+            orderBy: [{ is_online: "desc" }, { full_name: "asc" }],
+        });
+    },
+
     findByEmail: async (email) => {
         return await prisma.user.findUnique({
             where: { email },
@@ -1829,6 +2146,55 @@ export const userRepository = {
                 email: true,
                 full_name: true,
                 avatar_url: true,
+                is_online: true,
+                last_seen: true,
+            },
+        });
+    },
+
+    searchUsers: async (query, currentUserId, limit = 10) => {
+        return await prisma.user.findMany({
+            where: {
+                AND: [
+                    { id: { not: currentUserId } }, // Exclude current user
+                    {
+                        OR: [
+                            {
+                                full_name: {
+                                    contains: query,
+                                    mode: "insensitive",
+                                },
+                            },
+                            { email: { contains: query, mode: "insensitive" } },
+                        ],
+                    },
+                ],
+            },
+            select: {
+                id: true,
+                email: true,
+                full_name: true,
+                avatar_url: true,
+                is_online: true,
+                last_seen: true,
+            },
+            take: parseInt(limit),
+            orderBy: [
+                { is_online: "desc" }, // Online users first
+                { full_name: "asc" },
+            ],
+        });
+    },
+
+    updateOnlineStatus: async (userId, isOnline) => {
+        return await prisma.user.update({
+            where: { id: userId },
+            data: {
+                is_online: isOnline,
+                last_seen: new Date(),
+            },
+            select: {
+                id: true,
                 is_online: true,
                 last_seen: true,
             },
@@ -2039,6 +2405,7 @@ import {
     getConversation,
     getConversationParticipants,
     deleteConversation,
+    checkConversation, // Add this import
 } from "../controllers/conversationController.js";
 import { authenticateToken } from "../middlewares/auth.js";
 import { validate, validateParams } from "../middlewares/validation.js";
@@ -2072,35 +2439,6 @@ router.use(authenticateToken);
  *     responses:
  *       201:
  *         description: Conversation created successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/SuccessResponse'
- *             examples:
- *               success:
- *                 value:
- *                   success: true
- *                   msg: "Conversation created successfully"
- *                   data:
- *                     conversation:
- *                       id: "123e4567-e89b-12d3-a456-426614174000"
- *                       user1_id: "123e4567-e89b-12d3-a456-426614174000"
- *                       user2_id: "123e4567-e89b-12d3-a456-426614174001"
- *                       created_at: "2023-10-01T12:00:00Z"
- *                       user1:
- *                         id: "123e4567-e89b-12d3-a456-426614174000"
- *                         email: "user1@example.com"
- *                         full_name: "John Doe"
- *                         avatar_url: null
- *                         is_online: true
- *                         last_seen: "2023-10-01T12:00:00Z"
- *                       user2:
- *                         id: "123e4567-e89b-12d3-a456-426614174001"
- *                         email: "user2@example.com"
- *                         full_name: "Jane Smith"
- *                         avatar_url: null
- *                         is_online: false
- *                         last_seen: "2023-10-01T11:00:00Z"
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  *       404:
@@ -2125,39 +2463,60 @@ router.post(
  *     responses:
  *       200:
  *         description: Conversations retrieved successfully
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ */
+router.get("/", getUserConversations);
+
+/**
+ * @swagger
+ * /conversations/check/{user2_id}:
+ *   get:
+ *     summary: Check if conversation exists with user
+ *     tags: [Conversations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: user2_id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID of the other user
+ *     responses:
+ *       200:
+ *         description: Conversation check completed
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/SuccessResponse'
  *             examples:
- *               success:
+ *               exists:
  *                 value:
  *                   success: true
- *                   msg: "Conversations retrieved successfully"
+ *                   msg: "Conversation check completed"
  *                   data:
- *                     conversations:
- *                       - id: "123e4567-e89b-12d3-a456-426614174000"
- *                         user1_id: "123e4567-e89b-12d3-a456-426614174000"
- *                         user2_id: "123e4567-e89b-12d3-a456-426614174001"
- *                         created_at: "2023-10-01T12:00:00Z"
- *                         user1:
- *                           id: "123e4567-e89b-12d3-a456-426614174000"
- *                           email: "user1@example.com"
- *                           full_name: "John Doe"
- *                           avatar_url: null
- *                           is_online: true
- *                           last_seen: "2023-10-01T12:00:00Z"
- *                         user2:
- *                           id: "123e4567-e89b-12d3-a456-426614174001"
- *                           email: "user2@example.com"
- *                           full_name: "Jane Smith"
- *                           avatar_url: null
- *                           is_online: false
- *                           last_seen: "2023-10-01T11:00:00Z"
+ *                     exists: true
+ *                     conversation:
+ *                       id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       user1_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       user2_id: "123e4567-e89b-12d3-a456-426614174001"
+ *               notExists:
+ *                 value:
+ *                   success: true
+ *                   msg: "Conversation check completed"
+ *                   data:
+ *                     exists: false
+ *                     conversation: null
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  */
-router.get("/", getUserConversations);
+router.get(
+    "/check/:user2_id",
+    validateParams(conversationValidation.checkConversation),
+    checkConversation
+);
 
 /**
  * @swagger
@@ -2172,10 +2531,6 @@ router.get("/", getUserConversations);
  *     responses:
  *       200:
  *         description: Conversation retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/SuccessResponse'
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  *       401:
@@ -2202,10 +2557,6 @@ router.get(
  *     responses:
  *       200:
  *         description: Participants retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/SuccessResponse'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  *       404:
@@ -2230,10 +2581,6 @@ router.get(
  *     responses:
  *       200:
  *         description: Conversation deleted successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/SuccessResponse'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  *       404:
@@ -2256,61 +2603,17 @@ import authRoutes from "./auth.js";
 import profileRoutes from "./profile.js";
 import conversationRoutes from "./conversation.js";
 import messageRoutes from "./message.js";
+import userRoutes from "./user.js";
+import uploadRoutes from "./upload.js";
 
 const router = express.Router();
-
-/**
- * @swagger
- * components:
- *   securitySchemes:
- *     bearerAuth:
- *       type: http
- *       scheme: bearer
- *       bearerFormat: JWT
- */
-
-/**
- * @swagger
- * tags:
- *   - name: Authentication
- *     description: User authentication endpoints
- *   - name: Profile
- *     description: User profile management
- *   - name: Conversations
- *     description: Conversation management
- *   - name: Messages
- *     description: Message management
- *   - name: System
- *     description: System health and status
- */
-
-/**
- * @swagger
- * /health:
- *   get:
- *     summary: Health check
- *     tags: [System]
- *     responses:
- *       200:
- *         description: API is healthy
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/SuccessResponse'
- *             examples:
- *               health:
- *                 value:
- *                   success: true
- *                   msg: "Chat App API is running"
- *                   data:
- *                     timestamp: "2023-10-01T12:00:00Z"
- *                     version: "1.0.0"
- */
 
 router.use("/auth", authRoutes);
 router.use("/profile", profileRoutes);
 router.use("/conversations", conversationRoutes);
 router.use("/conversations", messageRoutes);
+router.use("/users", userRoutes);
+router.use("/upload", uploadRoutes);
 
 export default router;
 
@@ -2535,6 +2838,86 @@ export default router;
 
 ```
 
+## File: routes/oauth.js
+```js
+import express from "express";
+import {
+    githubAuth,
+    githubCallback,
+    getOAuthProviders,
+    getOAuthHealth,
+    getOAuthStatus,
+} from "../controllers/oauthController.js";
+
+const router = express.Router();
+
+/**
+ * @swagger
+ * tags:
+ *   name: OAuth
+ *   description: OAuth authentication endpoints
+ */
+
+/**
+ * @swagger
+ * /auth/oauth/providers:
+ *   get:
+ *     summary: Get available OAuth providers
+ *     tags: [OAuth]
+ *     responses:
+ *       200:
+ *         description: OAuth providers retrieved successfully
+ */
+router.get("/providers", getOAuthProviders);
+
+/**
+ * @swagger
+ * /auth/oauth/health:
+ *   get:
+ *     summary: Check OAuth configuration health
+ *     tags: [OAuth]
+ *     responses:
+ *       200:
+ *         description: OAuth health status
+ */
+router.get("/health", getOAuthHealth);
+
+/**
+ * @swagger
+ * /auth/oauth/status:
+ *   get:
+ *     summary: Check if OAuth is enabled
+ *     tags: [OAuth]
+ *     responses:
+ *       200:
+ *         description: OAuth status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 msg:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     enabled:
+ *                       type: boolean
+ *                     timestamp:
+ *                       type: string
+ */
+router.get("/status", getOAuthStatus);
+
+// GitHub OAuth routes
+router.get("/github", githubAuth);
+router.get("/github/callback", githubCallback);
+
+export default router;
+
+```
+
 ## File: routes/profile.js
 ```js
 import express from "express";
@@ -2599,6 +2982,218 @@ router.put(
     upload.single("avatar_file"), // This middleware handles file uploads
     validate(profileValidation.updateProfile),
     updateProfile
+);
+
+export default router;
+
+```
+
+## File: routes/upload.js
+```js
+import express from "express";
+import { uploadImage } from "../controllers/uploadController.js";
+import { authenticateToken } from "../middlewares/auth.js";
+import { upload } from "../middlewares/upload.js";
+
+const router = express.Router();
+
+router.use(authenticateToken);
+
+/**
+ * @swagger
+ * /upload/image:
+ *   post:
+ *     summary: Upload an image (for messages or profile)
+ *     tags: [Upload]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *               type:
+ *                 type: string
+ *                 enum: [message, profile]
+ *                 default: message
+ *     responses:
+ *       200:
+ *         description: Image uploaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 msg:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     url:
+ *                       type: string
+ *                     public_id:
+ *                       type: string
+ */
+router.post("/image", upload.single("image"), uploadImage);
+
+export default router;
+
+```
+
+## File: routes/user.js
+```js
+import express from "express";
+import {
+    searchUsers,
+    getAllUsers,
+    getUserById,
+    updateOnlineStatus,
+} from "../controllers/userController.js";
+import { authenticateToken } from "../middlewares/auth.js";
+import {
+    validate,
+    validateQuery,
+    validateParams,
+} from "../middlewares/validation.js";
+import { userValidation } from "../utils/validationSchemas.js";
+
+const router = express.Router();
+
+router.use(authenticateToken);
+
+/**
+ * @swagger
+ * tags:
+ *   name: Users
+ *   description: User management and search endpoints
+ */
+
+/**
+ * @swagger
+ * /users/search:
+ *   get:
+ *     summary: Search for users
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: q
+ *         in: query
+ *         required: true
+ *         schema:
+ *           type: string
+ *           minLength: 2
+ *         description: Search query (searches in full name and email)
+ *         example: "john"
+ *       - name: limit
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 50
+ *           default: 10
+ *         description: Maximum number of results
+ *     responses:
+ *       200:
+ *         description: Users found successfully
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ */
+router.get("/search", validateQuery(userValidation.searchQuery), searchUsers);
+
+/**
+ * @swagger
+ * /users:
+ *   get:
+ *     summary: Get all users (excluding current user)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: limit
+ *         in: query
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Users retrieved successfully
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ */
+router.get("/", validateQuery(userValidation.getAllUsers), getAllUsers);
+
+/**
+ * @swagger
+ * /users/{id}:
+ *   get:
+ *     summary: Get user by ID
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: User retrieved successfully
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ */
+router.get("/:id", validateParams(userValidation.userIdParams), getUserById);
+
+/**
+ * @swagger
+ * /users/online-status:
+ *   put:
+ *     summary: Update user online status
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - is_online
+ *             properties:
+ *               is_online:
+ *                 type: boolean
+ *                 description: Online status
+ *                 example: true
+ *     responses:
+ *       200:
+ *         description: Online status updated successfully
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ */
+router.put(
+    "/online-status",
+    validate(userValidation.updateOnlineStatus),
+    updateOnlineStatus
 );
 
 export default router;
@@ -2818,6 +3413,17 @@ export const deleteConversationService = async (conversation_id, user_id) => {
 
     await conversationRepository.delete(conversation_id);
     return { success: true, message: "Conversation deleted successfully" };
+};
+
+export const checkConversationService = async (user1_id, user2_id) => {
+    const [sortedUser1, sortedUser2] = [user1_id, user2_id].sort();
+
+    const conversation = await conversationRepository.findByParticipants(
+        sortedUser1,
+        sortedUser2
+    );
+
+    return conversation;
 };
 
 ```
@@ -3066,6 +3672,66 @@ export const getUnreadCountService = async (conversation_id, user_id) => {
 
 ```
 
+## File: services/oauthService.js
+```js
+import { handleGitHubUser } from "../utils/oauthHelpers.js";
+import { oauthValidators } from "../utils/oauthValidators.js";
+
+export const oauthService = {
+    // Process GitHub OAuth callback
+    processGitHubCallback: async (profile) => {
+        try {
+            // Validate the GitHub profile before processing
+            oauthValidators.validateGitHubProfile(profile);
+
+            const result = await handleGitHubUser(profile);
+            return result;
+        } catch (error) {
+            console.error("OAuth service error:", error);
+            throw error;
+        }
+    },
+
+    // Validate OAuth configuration (delegates to validator)
+    validateOAuthConfig: () => {
+        return oauthValidators.validateOAuthConfig();
+    },
+
+    // Validate callback parameters
+    validateCallbackParams: (req) => {
+        return oauthValidators.validateCallbackParams(req);
+    },
+
+    // Check if OAuth is enabled
+    isOAuthEnabled: () => {
+        return oauthValidators.isOAuthEnabled();
+    },
+
+    // Get OAuth configuration for frontend
+    getOAuthConfig: () => {
+        const config = oauthValidators.validateOAuthConfig();
+
+        return {
+            providers: {
+                github: config.github.enabled
+                    ? {
+                          name: "GitHub",
+                          url: "/api/auth/github",
+                          enabled: true,
+                      }
+                    : null,
+            },
+            client: {
+                url: config.client.url,
+                successRedirect: config.client.successRedirect,
+                errorRedirect: config.client.errorRedirect,
+            },
+        };
+    },
+};
+
+```
+
 ## File: services/profileService.js
 ```js
 import bcrypt from "bcryptjs";
@@ -3214,6 +3880,61 @@ export const tokenService = {
         const result = await tokenRepository.cleanupExpiredTokens();
         return { deletedCount: result.count };
     },
+};
+
+```
+
+## File: services/userService.js
+```js
+import { userRepository } from "../repositories/userRepository.js";
+
+export const searchUsersService = async (query, currentUserId, limit = 10) => {
+    if (!query || query.trim().length === 0) {
+        throw new Error("SEARCH_QUERY_REQUIRED");
+    }
+
+    if (query.trim().length < 2) {
+        throw new Error("SEARCH_QUERY_TOO_SHORT");
+    }
+
+    const users = await userRepository.searchUsers(
+        query.trim(),
+        currentUserId,
+        limit
+    );
+
+    return users;
+};
+
+export const getAllUsersService = async (currentUserId, limit = 50) => {
+    const users = await userRepository.findMany(currentUserId, limit);
+    return users;
+};
+
+export const getUserByIdService = async (userId) => {
+    const user = await userRepository.findById(userId);
+
+    if (!user) {
+        throw new Error("USER_NOT_FOUND");
+    }
+
+    // Return user without sensitive data
+    const { password_hash, ...userWithoutPassword } = user;
+    return userWithoutPassword;
+};
+
+export const updateOnlineStatusService = async (userId, isOnline) => {
+    const user = await userRepository.findById(userId);
+    if (!user) {
+        throw new Error("USER_NOT_FOUND");
+    }
+
+    const updatedUser = await userRepository.updateOnlineStatus(
+        userId,
+        isOnline
+    );
+
+    return updatedUser;
 };
 
 ```
@@ -3424,6 +4145,49 @@ export const handleMessageError = (res, error) => {
         errorResponse(res, "Internal server error");
     }
 };
+
+export const handleUserError = (res, error) => {
+    const errorMap = {
+        SEARCH_QUERY_REQUIRED: () =>
+            badRequestResponse(res, "Search query is required"),
+        SEARCH_QUERY_TOO_SHORT: () =>
+            badRequestResponse(
+                res,
+                "Search query must be at least 2 characters"
+            ),
+        USER_NOT_FOUND: () => notFoundResponse(res, "User not found"),
+    };
+
+    const handler = errorMap[error.message];
+    if (handler) {
+        handler();
+    } else {
+        console.error("User error:", error);
+        errorResponse(res, "Internal server error");
+    }
+};
+
+export const handleOAuthError = (res, error) => {
+    const errorMap = {
+        EMAIL_REQUIRED_FOR_OAUTH: () =>
+            badRequestResponse(
+                res,
+                "Email is required for OAuth authentication. Please ensure your GitHub account has a public email."
+            ),
+        OAUTH_PROVIDER_ERROR: () =>
+            errorResponse(res, "OAuth provider error", 502),
+        MISSING_OAUTH_CONFIG: () =>
+            errorResponse(res, "OAuth configuration is incomplete", 503),
+    };
+
+    const handler = errorMap[error.message];
+    if (handler) {
+        handler();
+    } else {
+        console.error("OAuth error:", error);
+        errorResponse(res, "OAuth authentication failed");
+    }
+};
 ```
 
 ## File: utils/jwt.js
@@ -3448,6 +4212,217 @@ export const verifyAccessToken = (token) => {
 
 export const verifyRefreshToken = (token) => {
     return jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
+};
+
+```
+
+## File: utils/oauthHelpers.js
+```js
+import bcrypt from "bcryptjs";
+import { userRepository } from "../repositories/userRepository.js";
+import { tokenService } from "../services/tokenService.js";
+
+// Extract email from GitHub profile
+export const getEmailFromGitHubProfile = (profile) => {
+    // GitHub might not return email if it's private
+    if (profile.emails && profile.emails.length > 0) {
+        return profile.emails[0].value;
+    }
+
+    // Fallback: use GitHub username to create an email
+    if (profile.username) {
+        return `${profile.username}@github.com`;
+    }
+
+    // Last resort: use profile ID
+    return `${profile.id}@github.com`;
+};
+
+// Extract full name from GitHub profile
+export const getFullNameFromGitHubProfile = (profile) => {
+    return profile.displayName || profile.username || "GitHub User";
+};
+
+// Extract avatar from GitHub profile
+export const getAvatarFromGitHubProfile = (profile) => {
+    return profile.photos && profile.photos[0] ? profile.photos[0].value : null;
+};
+
+// Generate random password for OAuth users
+export const generateRandomPassword = async () => {
+    const randomPassword =
+        Math.random().toString(36).slice(-16) +
+        Math.random().toString(36).slice(-16);
+    return await bcrypt.hash(
+        randomPassword,
+        parseInt(process.env.ROUNDS) || 12
+    );
+};
+
+// Main OAuth user handler
+export const handleGitHubUser = async (profile) => {
+    const email = getEmailFromGitHubProfile(profile);
+
+    if (!email) {
+        throw new Error("EMAIL_REQUIRED_FOR_OAUTH");
+    }
+
+    // Check if user exists
+    let user = await userRepository.findByEmail(email);
+
+    if (!user) {
+        // Create new user
+        const passwordHash = await generateRandomPassword();
+
+        user = await userRepository.create({
+            email: email,
+            full_name: getFullNameFromGitHubProfile(profile),
+            password_hash: passwordHash,
+            avatar_url: getAvatarFromGitHubProfile(profile),
+            is_online: true,
+        });
+    } else {
+        // Update existing user's online status
+        user = await userRepository.update(user.id, {
+            is_online: true,
+            last_seen: new Date(),
+        });
+    }
+
+    // Generate tokens
+    const { accessToken, refreshToken } = await tokenService.generateAuthTokens(
+        user.id
+    );
+
+    return {
+        user: {
+            id: user.id,
+            email: user.email,
+            full_name: user.full_name,
+            avatar_url: user.avatar_url,
+            is_online: user.is_online,
+            last_seen: user.last_seen,
+            created_at: user.created_at,
+        },
+        accessToken,
+        refreshToken,
+    };
+};
+
+```
+
+## File: utils/oauthValidators.js
+```js
+export const oauthValidators = {
+    // Validate OAuth environment configuration
+    validateOAuthConfig: () => {
+        const missingVars = [];
+        const warnings = [];
+
+        // Required environment variables
+        if (!process.env.GITHUB_CLIENT_ID) {
+            missingVars.push("GITHUB_CLIENT_ID");
+        }
+
+        if (!process.env.GITHUB_CLIENT_SECRET) {
+            missingVars.push("GITHUB_CLIENT_SECRET");
+        }
+
+        if (!process.env.CLIENT_URL) {
+            missingVars.push("CLIENT_URL");
+        }
+
+        // Optional but recommended environment variables
+        if (!process.env.CLIENT_SUCCESS_REDIRECT) {
+            warnings.push("CLIENT_SUCCESS_REDIRECT (default: /chat)");
+        }
+
+        if (!process.env.CLIENT_ERROR_REDIRECT) {
+            warnings.push("CLIENT_ERROR_REDIRECT (default: /login)");
+        }
+
+        // Throw error for missing required variables
+        if (missingVars.length > 0) {
+            throw new Error(
+                `Missing required OAuth environment variables: ${missingVars.join(
+                    ", "
+                )}`
+            );
+        }
+
+        return {
+            github: {
+                enabled: !!process.env.GITHUB_CLIENT_ID,
+                clientId: process.env.GITHUB_CLIENT_ID
+                    ? "configured"
+                    : "missing",
+                clientSecret: process.env.GITHUB_CLIENT_SECRET
+                    ? "configured"
+                    : "missing",
+                callbackUrl: "/api/auth/github/callback",
+            },
+            client: {
+                url: process.env.CLIENT_URL,
+                successRedirect: process.env.CLIENT_SUCCESS_REDIRECT || "/chat",
+                errorRedirect: process.env.CLIENT_ERROR_REDIRECT || "/login",
+            },
+            warnings: warnings.length > 0 ? warnings : null,
+        };
+    },
+
+    // Validate GitHub profile structure
+    validateGitHubProfile: (profile) => {
+        if (!profile) {
+            throw new Error("GitHub profile is null or undefined");
+        }
+
+        if (!profile.id) {
+            throw new Error("GitHub profile missing ID");
+        }
+
+        if (!profile.username && !profile.displayName) {
+            throw new Error("GitHub profile missing username and display name");
+        }
+
+        // Check if we have at least one way to identify the user
+        const hasEmail = profile.emails && profile.emails.length > 0;
+        const hasUsername = !!profile.username;
+
+        if (!hasEmail && !hasUsername) {
+            throw new Error("GitHub profile missing both email and username");
+        }
+
+        return true;
+    },
+
+    // Validate OAuth callback parameters
+    validateCallbackParams: (req) => {
+        const { error, error_description, code } = req.query;
+
+        if (error) {
+            throw new Error(
+                `OAuth provider error: ${error} - ${
+                    error_description || "No description"
+                }`
+            );
+        }
+
+        if (!code) {
+            throw new Error("Missing authorization code in callback");
+        }
+
+        return true;
+    },
+
+    // Check if OAuth is properly configured
+    isOAuthEnabled: () => {
+        try {
+            const config = oauthValidators.validateOAuthConfig();
+            return config.github.enabled;
+        } catch (error) {
+            return false;
+        }
+    },
 };
 
 ```
@@ -3546,6 +4521,10 @@ export const conversationValidation = {
     conversationParams: Joi.object({
         id: uuidSchema,
     }),
+
+    checkConversation: Joi.object({
+        user2_id: uuidSchema,
+    }),
 };
 
 export const messageValidation = {
@@ -3594,6 +4573,25 @@ export const readReceiptValidation = {
     markAsReadWithConversation: Joi.object({
         conversation_id: uuidSchema,
         message_id: uuidSchema,
+    }),
+};
+
+export const userValidation = {
+    searchQuery: Joi.object({
+        q: Joi.string().min(2).max(100).required(),
+        limit: Joi.number().integer().min(1).max(50).default(10),
+    }),
+
+    updateOnlineStatus: Joi.object({
+        is_online: Joi.boolean().required(),
+    }),
+
+    getAllUsers: Joi.object({
+        limit: Joi.number().integer().min(1).max(100).default(50),
+    }),
+
+    userIdParams: Joi.object({
+        id: uuidSchema,
     }),
 };
 

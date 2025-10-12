@@ -1,5 +1,6 @@
 import express from "express";
 import authRoutes from "./auth.js";
+import oauthRoutes from "./oauth.js";
 import profileRoutes from "./profile.js";
 import conversationRoutes from "./conversation.js";
 import messageRoutes from "./message.js";
@@ -9,6 +10,7 @@ import uploadRoutes from "./upload.js";
 const router = express.Router();
 
 router.use("/auth", authRoutes);
+router.use("/auth/oauth", oauthRoutes);
 router.use("/profile", profileRoutes);
 router.use("/conversations", conversationRoutes);
 router.use("/conversations", messageRoutes);

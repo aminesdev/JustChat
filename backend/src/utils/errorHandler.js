@@ -181,3 +181,25 @@ export const handleUserError = (res, error) => {
         errorResponse(res, "Internal server error");
     }
 };
+
+export const handleOAuthError = (res, error) => {
+    const errorMap = {
+        EMAIL_REQUIRED_FOR_OAUTH: () =>
+            badRequestResponse(
+                res,
+                "Email is required for OAuth authentication. Please ensure your GitHub account has a public email."
+            ),
+        OAUTH_PROVIDER_ERROR: () =>
+            errorResponse(res, "OAuth provider error", 502),
+        MISSING_OAUTH_CONFIG: () =>
+            errorResponse(res, "OAuth configuration is incomplete", 503),
+    };
+
+    const handler = errorMap[error.message];
+    if (handler) {
+        handler();
+    } else {
+        console.error("OAuth error:", error);
+        errorResponse(res, "OAuth authentication failed");
+    }
+};
