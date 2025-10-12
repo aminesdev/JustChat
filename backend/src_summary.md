@@ -96,8 +96,8 @@ export async function connectDb() {
 import passport from "passport";
 import { Strategy as GitHubStrategy } from "passport-github2";
 import { handleGitHubUser } from "../utils/oauthHelpers.js";
+import { userRepository } from "../repositories/userRepository.js";
 
-// Serialize user for sessions
 passport.serializeUser((user, done) => {
     done(null, user.id);
 });
@@ -111,14 +111,13 @@ passport.deserializeUser(async (id, done) => {
     }
 });
 
-// GitHub Strategy
 passport.use(
     new GitHubStrategy(
         {
             clientID: process.env.GITHUB_CLIENT_ID,
             clientSecret: process.env.GITHUB_CLIENT_SECRET,
-            callbackURL: "/api/auth/github/callback",
-            scope: ["user:email"], // Request email scope
+            callbackURL: "/api/auth/oauth/github/callback",
+            scope: ["user:email"],
         },
         async (accessToken, refreshToken, profile, done) => {
             try {
@@ -2600,6 +2599,7 @@ export default router;
 ```js
 import express from "express";
 import authRoutes from "./auth.js";
+import oauthRoutes from "./oauth.js";
 import profileRoutes from "./profile.js";
 import conversationRoutes from "./conversation.js";
 import messageRoutes from "./message.js";
@@ -2609,6 +2609,7 @@ import uploadRoutes from "./upload.js";
 const router = express.Router();
 
 router.use("/auth", authRoutes);
+router.use("/auth/oauth", oauthRoutes);
 router.use("/profile", profileRoutes);
 router.use("/conversations", conversationRoutes);
 router.use("/conversations", messageRoutes);

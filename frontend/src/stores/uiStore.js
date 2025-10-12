@@ -1,65 +1,77 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 
-export const useUIStore = create(
-    persist(
-        (set, get) => ({
-            // State
-            theme: "light",
-            sidebarOpen: true,
-            activeModal: null,
-            notifications: [],
-            loadingStates: {},
+export const useUIStore = create((set, get) => ({
+    // State
+    activeSidebar: "conversations",
+    isMobileSidebarOpen: false,
+    modals: {
+        userProfile: false,
+        imagePreview: false,
+        deleteConfirm: false,
+        newConversation: false,
+    },
+    toast: null,
+    theme: "light",
+    loadingStates: new Map(),
 
-            // Actions - Theme
-            toggleTheme: () =>
-                set((state) => ({
-                    theme: state.theme === "light" ? "dark" : "light",
-                })),
-            setTheme: (theme) => set({ theme }),
+    // Actions - UI state only
+    setActiveSidebar: (sidebar) => set({ activeSidebar: sidebar }),
 
-            // Actions - Layout
-            toggleSidebar: () =>
-                set((state) => ({
-                    sidebarOpen: !state.sidebarOpen,
-                })),
-            setSidebarOpen: (open) => set({ sidebarOpen: open }),
+    toggleMobileSidebar: () =>
+        set((state) => ({
+            isMobileSidebarOpen: !state.isMobileSidebarOpen,
+        })),
 
-            // Actions - Modals
-            openModal: (modalName) => set({ activeModal: modalName }),
-            closeModal: () => set({ activeModal: null }),
+    openModal: (modalName) =>
+        set((state) => ({
+            modals: { ...state.modals, [modalName]: true },
+        })),
 
-            // Actions - Notifications
-            addNotification: (notification) =>
-                set((state) => ({
-                    notifications: [
-                        ...state.notifications,
-                        {
-                            id: Date.now(),
-                            ...notification,
-                        },
-                    ],
-                })),
-            removeNotification: (id) =>
-                set((state) => ({
-                    notifications: state.notifications.filter(
-                        (n) => n.id !== id
-                    ),
-                })),
-            clearNotifications: () => set({ notifications: [] }),
+    closeModal: (modalName) =>
+        set((state) => ({
+            modals: { ...state.modals, [modalName]: false },
+        })),
 
-            // Actions - Loading states
-            setLoading: (key, loading) =>
-                set((state) => ({
-                    loadingStates: {
-                        ...state.loadingStates,
-                        [key]: loading,
-                    },
-                })),
+    closeAllModals: () =>
+        set({
+            modals: {
+                userProfile: false,
+                imagePreview: false,
+                deleteConfirm: false,
+                newConversation: false,
+            },
         }),
-        {
-            name: "ui-storage",
-            partialize: (state) => ({ theme: state.theme }),
-        }
-    )
-);
+
+    showToast: (toastData) => set({ toast: toastData }),
+
+    hideToast: () => set({ toast: null }),
+
+    setTheme: (theme) => {
+        set({ theme });
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("theme", theme);
+    },
+
+    toggleTheme: () =>
+        set((state) => {
+            const newTheme = state.theme === "light" ? "dark" : "light";
+            document.documentElement.setAttribute("data-theme", newTheme);
+            localStorage.setItem("theme", newTheme);
+            return { theme: newTheme };
+        }),
+
+    setLoading: (key, isLoading) =>
+        set((state) => {
+            const newLoadingStates = new Map(state.loadingStates);
+            if (isLoading) {
+                newLoadingStates.set(key, true);
+            } else {
+                newLoadingStates.delete(key);
+            }
+            return { loadingStates: newLoadingStates };
+        }),
+
+    // Selectors
+    isLoading: (key) => get().loadingStates.has(key),
+    isModalOpen: (modalName) => get().modals[modalName],
+}));
