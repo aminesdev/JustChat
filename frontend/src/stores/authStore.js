@@ -21,6 +21,9 @@ export const useAuthStore = create(
                     const { user, accessToken, refreshToken } =
                         response.data.data;
 
+                    localStorage.setItem("accessToken", accessToken);
+                    localStorage.setItem("refreshToken", refreshToken);
+
                     set({
                         user,
                         accessToken,
@@ -45,6 +48,9 @@ export const useAuthStore = create(
                     const response = await authService.signup(userData);
                     const { user, accessToken, refreshToken } =
                         response.data.data;
+
+                    localStorage.setItem("accessToken", accessToken);
+                    localStorage.setItem("refreshToken", refreshToken);
 
                     set({
                         user,
@@ -74,7 +80,10 @@ export const useAuthStore = create(
                 } catch (error) {
                     console.error("Logout API call failed:", error);
                 } finally {
+                    localStorage.removeItem("accessToken");
+                    localStorage.removeItem("refreshToken");
                     storage.clear();
+
                     set({
                         user: null,
                         accessToken: null,
@@ -88,14 +97,19 @@ export const useAuthStore = create(
 
             refreshTokens: async () => {
                 const { refreshToken } = get();
-                if (!refreshToken)
+                if (!refreshToken) {
+                    get().logout();
                     throw new Error("No refresh token available");
+                }
 
                 try {
                     const response = await authService.refreshToken({
                         refreshToken,
                     });
                     const { accessToken } = response.data.data;
+
+                    localStorage.setItem("accessToken", accessToken);
+
                     set({ accessToken, error: null });
                     return accessToken;
                 } catch (error) {
@@ -105,14 +119,32 @@ export const useAuthStore = create(
             },
 
             clearError: () => set({ error: null }),
+
+            initialize: () => {
+                const accessToken = localStorage.getItem("accessToken");
+                const refreshToken = localStorage.getItem("refreshToken");
+                const user = storage.get("user");
+
+                if (accessToken && user) {
+                    set({
+                        accessToken,
+                        refreshToken,
+                        user,
+                        isAuthenticated: true,
+                    });
+                }
+            },
         }),
         {
             name: "auth-storage",
             partialize: (state) => ({
+                user: state.user,
                 accessToken: state.accessToken,
                 refreshToken: state.refreshToken,
-                user: state.user,
             }),
         }
     )
 );
+
+// Initialize on import
+useAuthStore.getState().initialize();

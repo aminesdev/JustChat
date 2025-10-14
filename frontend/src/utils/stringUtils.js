@@ -1,13 +1,15 @@
 export const truncateText = (text, maxLength = 50) => {
-    if (!text) return "";
+    if (!text || typeof text !== "string") return "";
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + "...";
 };
 
 export const getInitials = (name) => {
-    if (!name) return "?";
+    if (!name || typeof name !== "string") return "?";
+
     return name
-        .split(" ")
+        .trim()
+        .split(/\s+/)
         .map((part) => part.charAt(0))
         .join("")
         .toUpperCase()
@@ -15,9 +17,29 @@ export const getInitials = (name) => {
 };
 
 export const sanitizeMessage = (text) => {
+    if (!text || typeof text !== "string") return "";
+
     return text
         .trim()
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/\n/g, "<br>");
+};
+
+export const unsanitizeMessage = (text) => {
+    if (!text || typeof text !== "string") return "";
+
+    return text
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/<br>/g, "\n");
+};
+
+export const capitalizeFirst = (text) => {
+    if (!text || typeof text !== "string") return "";
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+};
+
+export const generateRandomId = (prefix = "") => {
+    return `${prefix}${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 };

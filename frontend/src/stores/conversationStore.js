@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
+import { useAuthStore } from "./authStore";
 import { getErrorMessage } from "../utils/errorUtils";
 import { sortConversations, getOtherUser } from "../utils/chatUtils";
 
@@ -72,6 +73,9 @@ export const useConversationStore = create((set, get) => ({
     },
 
     getOrCreateConversation: async (user2Id) => {
+        const { user } = useAuthStore.getState();
+        if (!user) throw new Error("User not authenticated");
+
         const existingConversation = get().conversationsList.find(
             (conv) => conv.user1_id === user2Id || conv.user2_id === user2Id
         );

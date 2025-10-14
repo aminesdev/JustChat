@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
 import { useAuthStore } from "./authStore";
+import { useConversationStore } from "./conversationStore";
 import { getErrorMessage } from "../utils/errorUtils";
 import { validateMessage, sanitizeMessage } from "../utils/validationUtils";
 import { groupMessagesByDate } from "../utils/chatUtils";
@@ -31,6 +32,7 @@ export const useMessageStore = create((set, get) => ({
                 [...existingMessages, ...messages].forEach((msg) =>
                     messageMap.set(msg.id, msg)
                 );
+
                 const mergedMessages = Array.from(messageMap.values()).sort(
                     (a, b) => new Date(a.created_at) - new Date(b.created_at)
                 );
@@ -41,6 +43,7 @@ export const useMessageStore = create((set, get) => ({
                     pagination: {
                         ...pagination,
                         hasMore: messages.length === limit,
+                        currentPage: page,
                     },
                 });
 
@@ -58,19 +61,26 @@ export const useMessageStore = create((set, get) => ({
     },
 
     sendMessage: async (conversationId, messageData) => {
-        // Validate message
-        const validationError = validateMessage(messageData.message_text);
-        if (validationError) {
-            throw new Error(validationError);
+        if (messageData.message_type === "TEXT") {
+            const validationError = validateMessage(messageData.message_text);
+            if (validationError) {
+                throw new Error(validationError);
+            }
         }
 
         const tempId = `temp-${Date.now()}`;
         const { user } = useAuthStore.getState();
 
-        // Sanitize message text
+        if (!user) {
+            throw new Error("User not authenticated");
+        }
+
         const sanitizedData = {
             ...messageData,
-            message_text: sanitizeMessage(messageData.message_text),
+            message_text:
+                messageData.message_type === "TEXT"
+                    ? sanitizeMessage(messageData.message_text)
+                    : messageData.message_text,
         };
 
         const optimisticMessage = {
@@ -78,7 +88,12 @@ export const useMessageStore = create((set, get) => ({
             ...sanitizedData,
             conversation_id: conversationId,
             sender_id: user.id,
-            sender: user,
+            sender: {
+                id: user.id,
+                email: user.email,
+                full_name: user.full_name,
+                avatar_url: user.avatar_url,
+            },
             created_at: new Date().toISOString(),
             is_delivered: false,
             is_optimistic: true,
@@ -105,7 +120,6 @@ export const useMessageStore = create((set, get) => ({
                 sanitizedData
             );
             const realMessage = response.data.data.message;
-
             set((state) => {
                 const existingData = state.messages.get(conversationId) || {
                     messages: [],
@@ -126,7 +140,9 @@ export const useMessageStore = create((set, get) => ({
 
             const { updateConversationLastMessage } =
                 useConversationStore.getState();
-            updateConversationLastMessage(conversationId, realMessage);
+            if (updateConversationLastMessage) {
+                updateConversationLastMessage(conversationId, realMessage);
+            }
 
             return realMessage;
         } catch (error) {
@@ -162,19 +178,32 @@ export const useMessageStore = create((set, get) => ({
                 const conversationData = state.messages.get(conversationId);
                 if (!conversationData) return state;
 
+                const { user } = useAuthStore.getState();
+                if (!user) return state;
+
                 const updatedMessages = conversationData.messages.map((msg) => {
                     if (msg.id === messageId) {
-                        const { user } = useAuthStore.getState();
-                        return {
-                            ...msg,
-                            read_receipts: [
-                                ...(msg.read_receipts || []),
-                                {
-                                    reader_id: user.id,
-                                    read_at: new Date().toISOString(),
-                                },
-                            ],
-                        };
+                        const existingReceipts = msg.read_receipts || [];
+                        const alreadyRead = existingReceipts.some(
+                            (receipt) => receipt.reader_id === user.id
+                        );
+
+                        if (!alreadyRead) {
+                            return {
+                                ...msg,
+                                read_receipts: [
+                                    ...existingReceipts,
+                                    {
+                                        reader_id: user.id,
+                                        read_at: new Date().toISOString(),
+                                        reader: {
+                                            id: user.id,
+                                            full_name: user.full_name,
+                                        },
+                                    },
+                                ],
+                            };
+                        }
                     }
                     return msg;
                 });
@@ -231,7 +260,7 @@ export const useMessageStore = create((set, get) => ({
 
     getPagination: (conversationId) => {
         const data = get().messages.get(conversationId);
-        return data?.pagination || { hasMore: true };
+        return data?.pagination || { hasMore: true, currentPage: 1 };
     },
 
     getGroupedMessages: (conversationId) => {

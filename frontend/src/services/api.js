@@ -6,6 +6,9 @@ const API_BASE_URL =
 const api = axios.create({
     baseURL: API_BASE_URL,
     timeout: 10000,
+    headers: {
+        "Content-Type": "application/json",
+    },
 });
 
 api.interceptors.request.use(
@@ -29,13 +32,13 @@ api.interceptors.response.use(
 
             try {
                 const refreshToken = localStorage.getItem("refreshToken");
-                if (!refreshToken) throw new Error("No refresh token");
+                if (!refreshToken) {
+                    throw new Error("No refresh token");
+                }
 
                 const response = await axios.post(
                     `${API_BASE_URL}/auth/refresh-token`,
-                    {
-                        refreshToken,
-                    }
+                    { refreshToken }
                 );
 
                 const { accessToken } = response.data.data;
@@ -46,9 +49,23 @@ api.interceptors.response.use(
             } catch (refreshError) {
                 localStorage.removeItem("accessToken");
                 localStorage.removeItem("refreshToken");
-                window.location.href = "/login";
+
+                if (window.location.pathname !== "/login") {
+                    window.location.href = "/login";
+                }
+
                 return Promise.reject(refreshError);
             }
+        }
+
+        if (!error.response) {
+            console.error("Network error:", error.message);
+            error.response = {
+                data: {
+                    success: false,
+                    msg: "Network error. Please check your connection.",
+                },
+            };
         }
 
         return Promise.reject(error);

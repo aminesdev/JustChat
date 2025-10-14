@@ -1,6 +1,7 @@
 import api from "./api";
 
 export const chatService = {
+    // Conversations
     getConversations: async () => {
         const response = await api.get("/conversations");
         return response;
@@ -35,6 +36,7 @@ export const chatService = {
         return response;
     },
 
+    // Messages
     getMessages: async (conversationId, page = 1, limit = 50) => {
         const response = await api.get(
             `/conversations/${conversationId}/messages`,

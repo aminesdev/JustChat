@@ -51,3 +51,15 @@ export const sessionStorage = {
         }
     },
 };
+
+// Token-specific helpers
+export const tokenStorage = {
+    getAccessToken: () => storage.get("accessToken"),
+    setAccessToken: (token) => storage.set("accessToken", token),
+    getRefreshToken: () => storage.get("refreshToken"),
+    setRefreshToken: (token) => storage.set("refreshToken", token),
+    clearTokens: () => {
+        storage.remove("accessToken");
+        storage.remove("refreshToken");
+    },
+};

@@ -1,12 +1,9 @@
 import {BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom';
-// import { useAuthStore } from './store/authStore'; // Comment out for testing
 import Login from './pages/Auth/Login';
+import {useAuthStore} from './stores/authStore';
 
 function App() {
-    // const { isAuthenticated } = useAuthStore(); // Comment out for testing
-
-    // For testing, set isAuthenticated to false to see login page
-    const isAuthenticated = false;
+    const isAuthenticated = useAuthStore();
 
     return (
         <Router>

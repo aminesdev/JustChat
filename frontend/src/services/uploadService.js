@@ -6,7 +6,7 @@ export const uploadService = {
         validateFile(file);
 
         let processedFile = file;
-        
+
         if (file.size > 1024 * 1024) {
             processedFile = await compressImage(file, 0.7);
         }
@@ -16,9 +16,17 @@ export const uploadService = {
         formData.append("type", type);
 
         const response = await api.post("/upload/image", formData, {
-            headers: { "Content-Type": "multipart/form-data" },
-            timeout: 30000,
+            headers: {
+                "Content-Type": "multipart/form-data",
+            },
         });
-        return response;
+
+        return response.data;
+    },
+
+    deleteImage: async (publicId) => {
+        // Note: backend doesn't have delete endpoint yet
+        // This is for future implementation
+        console.log("Delete image endpoint not implemented yet");
     },
 };
