@@ -49,38 +49,63 @@
 
 ## File: App.jsx
 ```jsx
+import {useEffect} from 'react';
 import {BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom';
 import Login from './pages/Auth/Login';
+import Signup from './pages/Auth/Signup';
+import OAuthCallback from './pages/Auth/OAuthCallback';
+import Chat from './pages/Chat/Chat';
+import Profile from './pages/Profile/Profile';
+import ProtectedRoute from './components/layout/ProtectedRoute';
 import {useAuthStore} from './stores/authStore';
+import {useUIStore} from './stores/uiStore';
 
 function App() {
-    const isAuthenticated = useAuthStore();
+    const {isAuthenticated, initialize} = useAuthStore();
+    const {theme} = useUIStore();
+
+    // Initialize auth and theme on app load
+    useEffect(() => {
+        initialize();
+    }, [initialize]);
+
+    // Apply theme class to html element
+    useEffect(() => {
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+    }, [theme]);
 
     return (
         <Router>
             <div className="min-h-screen bg-background">
                 <Routes>
-                    {/* Public routes */}
                     <Route
                         path="/login"
-                        element={!isAuthenticated ? <Login /> : <Navigate to="/" />}
+                        element={!isAuthenticated ? <Login /> : <Navigate to="/chat" />}
                     />
                     <Route
                         path="/signup"
-                        element={!isAuthenticated ? <div>Signup Page Coming Soon</div> : <Navigate to="/" />}
+                        element={!isAuthenticated ? <Signup /> : <Navigate to="/chat" />}
                     />
-
-                    {/* Protected routes - show placeholder for now */}
+                    <Route
+                        path="/oauth-callback"
+                        element={<OAuthCallback />}
+                    />
                     <Route
                         path="/chat"
-                        element={isAuthenticated ? <div>Chat Page Coming Soon</div> : <Navigate to="/login" />}
+                        element={
+                            <ProtectedRoute>
+                                <Chat />
+                            </ProtectedRoute>
+                        }
                     />
                     <Route
                         path="/profile"
-                        element={isAuthenticated ? <div>Profile Page Coming Soon</div> : <Navigate to="/login" />}
+                        element={
+                            <ProtectedRoute>
+                                <Profile />
+                            </ProtectedRoute>
+                        }
                     />
-
-                    {/* Default route */}
                     <Route
                         path="/"
                         element={<Navigate to={isAuthenticated ? "/chat" : "/login"} />}
@@ -96,22 +121,202 @@ export default App;
 
 ## File: components/layout/Layout.jsx
 ```jsx
+import {useState} from 'react';
+import Navbar from './Navbar';
+import Sidebar from './Sidebar';
 
+const Layout = ({children}) => {
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+    return (
+        <div className="flex h-screen bg-background">
+            <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+            <div className="flex-1 flex flex-col">
+                <Navbar onMenuClick={() => setIsSidebarOpen(true)} />
+                <main className="flex-1 overflow-hidden">
+                    {children}
+                </main>
+            </div>
+        </div>
+    );
+};
+
+export default Layout;
 ```
 
 ## File: components/layout/Navbar.jsx
 ```jsx
+import {Button} from '@/components/ui/button';
+import {useAuthStore} from '@/stores/authStore';
+import {Menu, LogOut} from 'lucide-react';
+import {ThemeToggle} from '@/components/ui/theme-toggle';
 
+const Navbar = ({onMenuClick}) => {
+    const {logout} = useAuthStore();
+
+    const handleLogout = async () => {
+        await logout();
+    };
+
+    return (
+        <header className="border-b border-border bg-card/50 backdrop-blur-sm">
+            <div className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-4">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={onMenuClick}
+                        className="lg:hidden"
+                    >
+                        <Menu className="h-5 w-5" />
+                    </Button>
+                    <h1 className="text-xl font-bold">JustChat</h1>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <ThemeToggle />
+                    <Button variant="ghost" size="icon" onClick={handleLogout}>
+                        <LogOut className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
+        </header>
+    );
+};
+
+export default Navbar;
 ```
 
 ## File: components/layout/ProtectedRoute.jsx
 ```jsx
+import {Navigate} from 'react-router-dom';
+import {useAuthStore} from '@/stores/authStore';
 
+const ProtectedRoute = ({children}) => {
+    const {isAuthenticated} = useAuthStore();
+
+    return isAuthenticated ? children : <Navigate to="/login" />;
+};
+
+export default ProtectedRoute;
 ```
 
 ## File: components/layout/Sidebar.jsx
 ```jsx
+import {useConversationStore} from '@/stores/conversationStore';
+import {useAuthStore} from '@/stores/authStore';
+import {Button} from '@/components/ui/button';
+import {X, MessageSquare, Plus, User, Settings} from 'lucide-react';
+import {useNavigate} from 'react-router-dom';
 
+const Sidebar = ({isOpen, onClose}) => {
+    const {conversationsList, loadConversations, setCurrentConversation} = useConversationStore();
+    const {user} = useAuthStore();
+    const navigate = useNavigate();
+
+    const handleProfileClick = () => {
+        navigate('/profile');
+        onClose();
+    };
+
+    return (
+        <>
+            {/* Mobile overlay */}
+            {isOpen && (
+                <div
+                    className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
+                    onClick={onClose}
+                />
+            )}
+
+            {/* Sidebar */}
+            <div className={`
+                fixed inset-y-0 left-0 z-50 w-80 bg-card border-r border-border transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto
+                ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+            `}>
+                <div className="flex flex-col h-full">
+                    {/* Header */}
+                    <div className="flex items-center justify-between p-4 border-b border-border">
+                        <h2 className="text-lg font-semibold">Conversations</h2>
+                        <div className="flex items-center gap-2">
+                            <Button variant="ghost" size="icon" className="lg:hidden">
+                                <Plus className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden">
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* Conversations List */}
+                    <div className="flex-1 overflow-y-auto p-4">
+                        {conversationsList.length === 0 ? (
+                            <div className="text-center text-muted-foreground py-8">
+                                <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                <p>No conversations yet</p>
+                                <p className="text-sm">Start a new chat to begin messaging</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {conversationsList.map((conversation) => (
+                                    <div
+                                        key={conversation.id}
+                                        className="p-3 rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                                        onClick={() => {
+                                            setCurrentConversation(conversation.id);
+                                            onClose();
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                                                <MessageSquare className="h-5 w-5 text-primary" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium text-sm truncate">
+                                                    {conversation.user1.id === user?.id
+                                                        ? conversation.user2.full_name
+                                                        : conversation.user1.full_name
+                                                    }
+                                                </p>
+                                                <p className="text-xs text-muted-foreground truncate">
+                                                    {conversation.last_message?.message_text || 'No messages yet'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* User Profile Button */}
+                    <div className="p-4 border-t border-border">
+                        <Button
+                            variant="ghost"
+                            className="w-full justify-start p-3 h-auto"
+                            onClick={handleProfileClick}
+                        >
+                            <div className="flex items-center gap-3 w-full">
+                                <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
+                                    <span className="text-xs font-medium text-primary-foreground">
+                                        {user?.full_name?.charAt(0) || 'U'}
+                                    </span>
+                                </div>
+                                <div className="flex-1 min-w-0 text-left">
+                                    <p className="text-sm font-medium truncate">{user?.full_name}</p>
+                                    <p className="text-xs text-muted-foreground truncate">View profile</p>
+                                </div>
+                                <Settings className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+};
+
+export default Sidebar;
 ```
 
 ## File: components/ui/button.jsx
@@ -406,6 +611,30 @@ export { Label }
 
 ```
 
+## File: components/ui/theme-toggle.jsx
+```jsx
+import {Moon, Sun} from 'lucide-react';
+import {Button} from '@/components/ui/button';
+import {useUIStore} from '@/stores/uiStore';
+
+export function ThemeToggle() {
+    const {theme, toggleTheme} = useUIStore();
+
+    return (
+        <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            className="h-9 w-9"
+        >
+            <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+            <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+            <span className="sr-only">Toggle theme</span>
+        </Button>
+    );
+}
+```
+
 ## File: constants/config.js
 ```js
 export const APP_CONFIG = {
@@ -547,22 +776,39 @@ createRoot(document.getElementById('root')).render(
 ## File: pages/Auth/Login.jsx
 ```jsx
 import {useState} from 'react';
-import {Link} from 'react-router-dom';
+import {Link, useNavigate} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
+import {useAuthStore} from '@/stores/authStore';
+import {ThemeToggle} from '@/components/ui/theme-toggle';
+import {Github} from 'lucide-react';
 
 const Login = () => {
+    const navigate = useNavigate();
     const [formData, setFormData] = useState({
         email: '',
         password: '',
     });
+    const [isLoading, setIsLoading] = useState(false);
+    const {login, error, clearError} = useAuthStore();
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        console.log('Login attempt:', formData);
-        // Will connect to auth service later
+        setIsLoading(true);
+        clearError();
+
+        try {
+            await login(formData);
+            // If successful, navigation happens automatically via App.jsx routing
+            navigate('/chat');
+        } catch (error) {
+            console.error('Login failed:', error);
+            // Error is already set by the store
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleChange = (e) => {
@@ -570,55 +816,131 @@ const Login = () => {
             ...formData,
             [e.target.name]: e.target.value,
         });
+        if (error) clearError();
+    };
+
+    const handleGitHubLogin = () => {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+        window.location.href = `${apiUrl}/auth/oauth/github`;
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
-            <Card className="w-full max-w-md">
-                <CardHeader className="space-y-1">
-                    <CardTitle className="text-2xl text-center">Welcome to JustChat</CardTitle>
-                    <CardDescription className="text-center">
-                        Sign in to your account to continue
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="email">Email</Label>
-                            <Input
-                                id="email"
-                                name="email"
-                                type="email"
-                                placeholder="Enter your email"
-                                value={formData.email}
-                                onChange={handleChange}
-                                required
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="password">Password</Label>
-                            <Input
-                                id="password"
-                                name="password"
-                                type="password"
-                                placeholder="Enter your password"
-                                value={formData.password}
-                                onChange={handleChange}
-                                required
-                            />
-                        </div>
-                        <Button type="submit" className="w-full">
-                            Sign In
-                        </Button>
-                    </form>
-                    <div className="mt-4 text-center text-sm">
-                        Don't have an account?{' '}
-                        <Link to="/signup" className="text-primary hover:text-primary/90 font-medium">
-                            Sign up
-                        </Link>
+        <div className="min-h-screen flex">
+            <div className="flex-1 flex items-center justify-center p-8 bg-background">
+                <div className="w-full max-w-md space-y-8">
+                    <div className="text-center">
+                        <h1 className="text-3xl font-bold text-foreground">JustChat</h1>
+                        <p className="text-muted-foreground mt-2">Sign in to your account</p>
                     </div>
-                </CardContent>
-            </Card>
+
+                    <Card>
+                        <CardHeader className="space-y-1">
+                            <CardTitle className="text-2xl text-center">Welcome back</CardTitle>
+                            <CardDescription className="text-center">
+                                Enter your credentials to continue
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="w-full mb-6"
+                                onClick={handleGitHubLogin}
+                                disabled={isLoading}
+                            >
+                                <Github className="mr-2 h-4 w-4" />
+                                Continue with GitHub
+                            </Button>
+
+                            <div className="relative mb-6">
+                                <div className="absolute inset-0 flex items-center">
+                                    <span className="w-full border-t" />
+                                </div>
+                                <div className="relative flex justify-center text-xs uppercase">
+                                    <span className="bg-background px-2 text-muted-foreground">
+                                        Or continue with email
+                                    </span>
+                                </div>
+                            </div>
+
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="email">Email</Label>
+                                    <Input
+                                        id="email"
+                                        name="email"
+                                        type="email"
+                                        placeholder="Enter your email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        required
+                                        disabled={isLoading}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <Label htmlFor="password">Password</Label>
+                                        <Link
+                                            to="/forgot-password"
+                                            className="text-sm text-primary hover:text-primary/90"
+                                        >
+                                            Forgot password?
+                                        </Link>
+                                    </div>
+                                    <Input
+                                        id="password"
+                                        name="password"
+                                        type="password"
+                                        placeholder="Enter your password"
+                                        value={formData.password}
+                                        onChange={handleChange}
+                                        required
+                                        disabled={isLoading}
+                                    />
+                                </div>
+
+                                {error && (
+                                    <div className="p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
+                                        {error}
+                                    </div>
+                                )}
+
+                                <Button
+                                    type="submit"
+                                    className="w-full"
+                                    disabled={isLoading}
+                                >
+                                    {isLoading ? 'Signing in...' : 'Log In'}
+                                </Button>
+                            </form>
+
+                            <div className="mt-6 text-center text-sm">
+                                Don't have an account?{' '}
+                                <Link
+                                    to="/signup"
+                                    className="text-primary hover:text-primary/90 font-medium"
+                                >
+                                    Sign up
+                                </Link>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+
+            <div className="flex-1 hidden lg:flex items-center justify-center p-8">
+                <div className="w-full max-w-md">
+                    <img
+                        src="/Login.svg"
+                        alt="Login Illustration"
+                        className="w-full h-auto"
+                    />
+                </div>
+            </div>
+
+            <div className="absolute top-4 right-4">
+                <ThemeToggle />
+            </div>
         </div>
     );
 };
@@ -626,19 +948,652 @@ const Login = () => {
 export default Login;
 ```
 
+## File: pages/Auth/OAuthCallback.jsx
+```jsx
+import {useEffect} from 'react';
+import {useNavigate} from 'react-router-dom';
+import {useAuthStore} from '@/stores/authStore';
+import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
+import {ThemeToggle} from '@/components/ui/theme-toggle';
+
+const OAuthCallback = () => {
+    const navigate = useNavigate();
+    const {initialize} = useAuthStore();
+
+    useEffect(() => {
+        const handleOAuthCallback = async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const accessToken = urlParams.get('accessToken');
+            const refreshToken = urlParams.get('refreshToken');
+            const user = urlParams.get('user');
+
+            if (accessToken && refreshToken && user) {
+                try {
+                    // Store tokens and user data
+                    localStorage.setItem('accessToken', accessToken);
+                    localStorage.setItem('refreshToken', refreshToken);
+
+                    const userData = JSON.parse(decodeURIComponent(user));
+                    localStorage.setItem('user', JSON.stringify(userData));
+
+                    // Re-initialize the auth store
+                    await initialize();
+
+                    // Navigate to chat
+                    navigate('/chat');
+                } catch (error) {
+                    console.error('OAuth callback error:', error);
+                    navigate('/login?error=oauth_failed');
+                }
+            } else {
+                console.error('Missing OAuth parameters');
+                navigate('/login?error=oauth_failed');
+            }
+        };
+
+        handleOAuthCallback();
+    }, [navigate, initialize]);
+
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+            <Card className="w-full max-w-md">
+                <CardHeader>
+                    <CardTitle className="text-center">Completing sign in...</CardTitle>
+                    <CardDescription className="text-center">
+                        Please wait while we complete your authentication.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="flex justify-center py-8">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+                </CardContent>
+            </Card>
+
+            <div className="absolute top-4 right-4">
+                <ThemeToggle />
+            </div>
+        </div>
+    );
+};
+
+export default OAuthCallback;
+```
+
 ## File: pages/Auth/Signup.jsx
 ```jsx
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useAuthStore } from '@/stores/authStore';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { Github } from 'lucide-react';
 
+const Signup = () => {
+    const [formData, setFormData] = useState({
+        email: '',
+        password: '',
+        full_name: '',
+        confirmPassword: '',
+    });
+    const [isLoading, setIsLoading] = useState(false);
+    const { signup, error, clearError } = useAuthStore();
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        
+        if (formData.password !== formData.confirmPassword) {
+            return;
+        }
+
+        setIsLoading(true);
+        clearError();
+
+        try {
+            await signup({
+                email: formData.email,
+                password: formData.password,
+                full_name: formData.full_name,
+            });
+        } catch (error) {
+            console.error('Signup failed:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleChange = (e) => {
+        setFormData({
+            ...formData,
+            [e.target.name]: e.target.value,
+        });
+        if (error) clearError();
+    };
+
+    const handleGitHubSignup = () => {
+        window.location.href = `${import.meta.env.VITE_API_URL || 'http://localhost:5001/api'}/auth/oauth/github`;
+    };
+
+    const passwordsMatch = formData.password === formData.confirmPassword || !formData.confirmPassword;
+
+    return (
+        <div className="min-h-screen flex">
+
+            <div className="flex-1 flex items-center justify-center p-8 bg-background">
+                <div className="w-full max-w-md space-y-8">
+                    <div className="text-center">
+                        <h1 className="text-3xl font-bold text-foreground">JustChat</h1>
+                        <p className="text-muted-foreground mt-2">Create your account</p>
+                    </div>
+
+                    <Card>
+                        <CardHeader className="space-y-1">
+                            <CardTitle className="text-2xl text-center">Get started</CardTitle>
+                            <CardDescription className="text-center">
+                                Enter your details to create an account
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="w-full mb-6"
+                                onClick={handleGitHubSignup}
+                                disabled={isLoading}
+                            >
+                                <Github className="mr-2 h-4 w-4" />
+                                Continue with GitHub
+                            </Button>
+
+                            <div className="relative mb-6">
+                                <div className="absolute inset-0 flex items-center">
+                                    <span className="w-full border-t" />
+                                </div>
+                                <div className="relative flex justify-center text-xs uppercase">
+                                    <span className="bg-background px-2 text-muted-foreground">
+                                        Or continue with email
+                                    </span>
+                                </div>
+                            </div>
+
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="full_name">Full Name</Label>
+                                    <Input
+                                        id="full_name"
+                                        name="full_name"
+                                        type="text"
+                                        placeholder="Enter your full name"
+                                        value={formData.full_name}
+                                        onChange={handleChange}
+                                        required
+                                        disabled={isLoading}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="email">Email</Label>
+                                    <Input
+                                        id="email"
+                                        name="email"
+                                        type="email"
+                                        placeholder="Enter your email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        required
+                                        disabled={isLoading}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="password">Password</Label>
+                                    <Input
+                                        id="password"
+                                        name="password"
+                                        type="password"
+                                        placeholder="Create a password"
+                                        value={formData.password}
+                                        onChange={handleChange}
+                                        required
+                                        disabled={isLoading}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="confirmPassword">Confirm Password</Label>
+                                    <Input
+                                        id="confirmPassword"
+                                        name="confirmPassword"
+                                        type="password"
+                                        placeholder="Confirm your password"
+                                        value={formData.confirmPassword}
+                                        onChange={handleChange}
+                                        required
+                                        disabled={isLoading}
+                                    />
+                                    {!passwordsMatch && (
+                                        <p className="text-sm text-destructive">
+                                            Passwords do not match
+                                        </p>
+                                    )}
+                                </div>
+
+                                {error && (
+                                    <div className="p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
+                                        {error}
+                                    </div>
+                                )}
+
+                                <Button 
+                                    type="submit" 
+                                    className="w-full" 
+                                    disabled={isLoading || !passwordsMatch}
+                                >
+                                    {isLoading ? 'Creating account...' : 'Create Account'}
+                                </Button>
+                            </form>
+
+                            <div className="mt-6 text-center text-sm">
+                                Already have an account?{' '}
+                                <Link 
+                                    to="/login" 
+                                    className="text-primary hover:text-primary/90 font-medium"
+                                >
+                                    Log in
+                                </Link>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+
+            <div className="flex-1 hidden lg:flex items-center justify-center p-8">
+                <div className="w-full max-w-md">
+                    <img
+                        src="/SignUp.svg"
+                        alt="Login Illustration"
+                        className="w-full h-auto"
+                    />
+                </div>
+            </div>
+
+            <div className="absolute top-4 right-4">
+                <ThemeToggle />
+            </div>
+        </div>
+    );
+};
+
+export default Signup;
 ```
 
 ## File: pages/Chat/Chat.jsx
 ```jsx
+import Layout from '@/components/layout/Layout';
 
+const Chat = () => {
+    return (
+        <Layout>
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+                <div className="text-center">
+                    <h2 className="text-2xl font-bold mb-2">Welcome to JustChat</h2>
+                    <p>Select a conversation to start chatting</p>
+                </div>
+            </div>
+        </Layout>
+    );
+};
+
+export default Chat;
 ```
 
 ## File: pages/Profile/Profile.jsx
 ```jsx
+import Layout from '@/components/layout/Layout';
+import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
+import {Button} from '@/components/ui/button';
+import {Input} from '@/components/ui/input';
+import {Label} from '@/components/ui/label';
+import {useAuthStore} from '@/stores/authStore';
+import {useUserStore} from '@/stores/userStore';
+import {useState} from 'react';
+import {User, Mail, Camera, Save, X, Key, Upload} from 'lucide-react';
 
+const Profile = () => {
+    const {user} = useAuthStore();
+    const {updateProfile, isLoading, error, clearError} = useUserStore();
+    const [isEditing, setIsEditing] = useState(false);
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
+    const [formData, setFormData] = useState({
+        full_name: user?.full_name || '',
+    });
+    const [passwordData, setPasswordData] = useState({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+    });
+    const [avatarFile, setAvatarFile] = useState(null);
+    const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || '');
+    const [success, setSuccess] = useState('');
+
+    const handleSave = async () => {
+        clearError();
+        setSuccess('');
+
+        const updateData = new FormData();
+
+        if (formData.full_name !== user?.full_name) {
+            updateData.append('full_name', formData.full_name);
+        }
+
+        if (avatarFile) {
+            updateData.append('avatar_file', avatarFile);
+        }
+
+        try {
+            await updateProfile(updateData);
+            setSuccess('Profile updated successfully');
+            setIsEditing(false);
+            setAvatarFile(null);
+        } catch (error) {
+            console.error('Profile update failed:', error);
+        }
+    };
+
+    const handlePasswordChange = async () => {
+        if (passwordData.newPassword !== passwordData.confirmPassword) {
+            clearError();
+            return;
+        }
+
+        if (passwordData.newPassword.length < 6) {
+            clearError();
+            return;
+        }
+
+        clearError();
+        setSuccess('');
+
+        const updateData = new FormData();
+        updateData.append('currentPassword', passwordData.currentPassword);
+        updateData.append('newPassword', passwordData.newPassword);
+
+        try {
+            await updateProfile(updateData);
+            setSuccess('Password updated successfully');
+            setPasswordData({
+                currentPassword: '',
+                newPassword: '',
+                confirmPassword: '',
+            });
+            setIsChangingPassword(false);
+        } catch (error) {
+            console.error('Password update failed:', error);
+        }
+    };
+
+    const handleAvatarChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+            return;
+        }
+
+        setAvatarFile(file);
+        clearError();
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            setAvatarPreview(e.target.result);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleCancel = () => {
+        setFormData({
+            full_name: user?.full_name || '',
+        });
+        setAvatarFile(null);
+        setAvatarPreview(user?.avatar_url || '');
+        clearError();
+        setSuccess('');
+        setIsEditing(false);
+    };
+
+    const clearMessages = () => {
+        clearError();
+        setSuccess('');
+    };
+
+    const passwordsMatch = passwordData.newPassword === passwordData.confirmPassword || !passwordData.confirmPassword;
+
+    return (
+        <Layout>
+            <div className="container max-w-4xl mx-auto p-6">
+                <div className="space-y-6">
+                    <div>
+                        <h1 className="text-3xl font-bold">Profile</h1>
+                        <p className="text-muted-foreground">Manage your account settings</p>
+                    </div>
+
+                    {(error || success) && (
+                        <Card className={error ? "border-destructive" : "border-green-500"}>
+                            <CardContent className="p-4">
+                                <div className={`flex items-center justify-between ${error ? "text-destructive" : "text-green-600"}`}>
+                                    <span>{error || success}</span>
+                                    <Button variant="ghost" size="icon" onClick={clearMessages}>
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    <div className="grid gap-6 lg:grid-cols-3">
+                        <Card className="lg:col-span-1">
+                            <CardHeader>
+                                <CardTitle>Profile Picture</CardTitle>
+                                <CardDescription>
+                                    Update your profile photo
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="flex flex-col items-center space-y-4">
+                                    <div className="relative">
+                                        <div className="w-32 h-32 bg-primary/10 rounded-full flex items-center justify-center overflow-hidden">
+                                            {avatarPreview ? (
+                                                <img
+                                                    src={avatarPreview}
+                                                    alt="Profile"
+                                                    className="w-32 h-32 rounded-full object-cover"
+                                                />
+                                            ) : user?.avatar_url ? (
+                                                <img
+                                                    src={user.avatar_url}
+                                                    alt="Profile"
+                                                    className="w-32 h-32 rounded-full object-cover"
+                                                />
+                                            ) : (
+                                                <User className="h-16 w-16 text-primary" />
+                                            )}
+                                        </div>
+                                        {isEditing && (
+                                            <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full p-2 cursor-pointer hover:bg-primary/90">
+                                                <Camera className="h-4 w-4" />
+                                                <input
+                                                    id="avatar-upload"
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={handleAvatarChange}
+                                                    className="hidden"
+                                                    disabled={isLoading}
+                                                />
+                                            </label>
+                                        )}
+                                    </div>
+                                    {isEditing ? (
+                                        <label htmlFor="avatar-upload" className="w-full">
+                                            <Button variant="outline" className="w-full" disabled={isLoading}>
+                                                <Upload className="h-4 w-4 mr-2" />
+                                                Change Photo
+                                            </Button>
+                                        </label>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground text-center">
+                                            Click Edit Profile to change your photo
+                                        </p>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="lg:col-span-2">
+                            <CardHeader>
+                                <CardTitle>Profile Information</CardTitle>
+                                <CardDescription>
+                                    Update your personal details
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="full_name">Full Name</Label>
+                                    <Input
+                                        id="full_name"
+                                        value={formData.full_name}
+                                        onChange={(e) => setFormData({...formData, full_name: e.target.value})}
+                                        disabled={!isEditing || isLoading}
+                                        placeholder="Enter your full name"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="email">Email</Label>
+                                    <div className="flex items-center gap-2">
+                                        <Mail className="h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                            id="email"
+                                            type="email"
+                                            value={user?.email || ''}
+                                            disabled
+                                            className="flex-1"
+                                        />
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        Email cannot be changed
+                                    </p>
+                                </div>
+
+                                <div className="flex gap-2 pt-4">
+                                    {isEditing ? (
+                                        <>
+                                            <Button
+                                                onClick={handleSave}
+                                                disabled={isLoading}
+                                            >
+                                                {isLoading ? (
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                                ) : (
+                                                    <Save className="h-4 w-4 mr-2" />
+                                                )}
+                                                Save Changes
+                                            </Button>
+                                            <Button variant="outline" onClick={handleCancel} disabled={isLoading}>
+                                                Cancel
+                                            </Button>
+                                        </>
+                                    ) : (
+                                        <Button onClick={() => setIsEditing(true)}>
+                                            Edit Profile
+                                        </Button>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Change Password</CardTitle>
+                            <CardDescription>
+                                Update your password to keep your account secure
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {isChangingPassword ? (
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="currentPassword">Current Password</Label>
+                                        <Input
+                                            id="currentPassword"
+                                            type="password"
+                                            value={passwordData.currentPassword}
+                                            onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
+                                            disabled={isLoading}
+                                            placeholder="Enter current password"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="newPassword">New Password</Label>
+                                        <Input
+                                            id="newPassword"
+                                            type="password"
+                                            value={passwordData.newPassword}
+                                            onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+                                            disabled={isLoading}
+                                            placeholder="Enter new password"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                                        <Input
+                                            id="confirmPassword"
+                                            type="password"
+                                            value={passwordData.confirmPassword}
+                                            onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+                                            disabled={isLoading}
+                                            placeholder="Confirm new password"
+                                        />
+                                        {!passwordsMatch && (
+                                            <p className="text-sm text-destructive">
+                                                Passwords do not match
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            onClick={handlePasswordChange}
+                                            disabled={isLoading || !passwordsMatch || !passwordData.currentPassword || !passwordData.newPassword}
+                                        >
+                                            {isLoading ? (
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                            ) : (
+                                                <Key className="h-4 w-4 mr-2" />
+                                            )}
+                                            Update Password
+                                        </Button>
+                                        <Button variant="outline" onClick={() => setIsChangingPassword(false)} disabled={isLoading}>
+                                            Cancel
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <Button variant="outline" onClick={() => setIsChangingPassword(true)}>
+                                    <Key className="h-4 w-4 mr-2" />
+                                    Change Password
+                                </Button>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        </Layout>
+    );
+};
+
+export default Profile;
 ```
 
 ## File: services/api.js
@@ -646,11 +1601,14 @@ export default Login;
 import axios from "axios";
 
 const API_BASE_URL =
-    import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    import.meta.env.VITE_API_URL;
 
 const api = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 10000,
+    timeout: 15000, // 15 seconds
+    headers: {
+        "Content-Type": "application/json",
+    },
 });
 
 // Request interceptor
@@ -662,7 +1620,10 @@ api.interceptors.request.use(
         }
         return config;
     },
-    (error) => Promise.reject(error)
+    (error) => {
+        console.error("Request interceptor error:", error);
+        return Promise.reject(error);
+    }
 );
 
 // Response interceptor
@@ -671,18 +1632,29 @@ api.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
+        // Network error (backend not reachable)
+        if (!error.response) {
+            console.error("Network Error: Cannot connect to server");
+            const networkError = new Error(
+                "Cannot connect to server. Please check if the backend is running."
+            );
+            networkError.isNetworkError = true;
+            return Promise.reject(networkError);
+        }
+
+        // Token refresh logic
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true;
 
             try {
                 const refreshToken = localStorage.getItem("refreshToken");
-                if (!refreshToken) throw new Error("No refresh token");
+                if (!refreshToken) {
+                    throw new Error("No refresh token");
+                }
 
                 const response = await axios.post(
                     `${API_BASE_URL}/auth/refresh-token`,
-                    {
-                        refreshToken,
-                    }
+                    { refreshToken }
                 );
 
                 const { accessToken } = response.data.data;
@@ -691,9 +1663,18 @@ api.interceptors.response.use(
 
                 return api(originalRequest);
             } catch (refreshError) {
+                console.error("Token refresh failed:", refreshError);
+
+                // Clear auth data
                 localStorage.removeItem("accessToken");
                 localStorage.removeItem("refreshToken");
-                window.location.href = "/login";
+                localStorage.removeItem("user");
+
+                // Redirect to login
+                if (window.location.pathname !== "/login") {
+                    window.location.href = "/login";
+                }
+
                 return Promise.reject(refreshError);
             }
         }
@@ -851,21 +1832,35 @@ import api from "./api";
 import { validateFile, compressImage } from "../utils/fileUtils";
 
 export const uploadService = {
-  uploadImage: async (file, type = "message") => {
-    validateFile(file);
+    uploadImage: async (file, type = "message") => {
+        validateFile(file);
 
-    let processedFile = file;
-    
-    if (file.size > 1024 * 1024) {
-      processedFile = await compressImage(file, 0.7);
-    }
+        let processedFile = file;
 
-    const formData = new FormData();
-    formData.append("image", processedFile);
-    formData.append("type", type);
+        if (file.size > 1024 * 1024) {
+            processedFile = await compressImage(file, 0.7);
+        }
 
-    const response = await api.post("/upload/image", formData, {
-      headers: { "Content-Type": "
+        const formData = new FormData();
+        formData.append("image", processedFile);
+        formData.append("type", type);
+
+        const response = await api.post("/upload/image", formData, {
+            headers: {
+                "Content-Type": "multipart/form-data",
+            },
+        });
+
+        return response.data;
+    },
+
+    deleteImage: async (publicId) => {
+        // Note: backend doesn't have delete endpoint yet
+        // This is for future implementation
+        console.log("Delete image endpoint not implemented yet");
+    },
+};
+
 ```
 
 ## File: services/userService.js
@@ -932,12 +1927,42 @@ export const useAuthStore = create(
             isLoading: false,
             error: null,
 
+            // Initialize auth state from localStorage
+            initialize: async () => {
+                const accessToken = localStorage.getItem("accessToken");
+                const refreshToken = localStorage.getItem("refreshToken");
+                const userStr = localStorage.getItem("user");
+
+                if (accessToken && refreshToken && userStr) {
+                    try {
+                        const user = JSON.parse(userStr);
+                        set({
+                            accessToken,
+                            refreshToken,
+                            user,
+                            isAuthenticated: true,
+                        });
+                    } catch (error) {
+                        console.error(
+                            "Failed to parse stored user data:",
+                            error
+                        );
+                        get().logout();
+                    }
+                }
+            },
+
             login: async (credentials) => {
                 set({ isLoading: true, error: null });
                 try {
                     const response = await authService.login(credentials);
                     const { user, accessToken, refreshToken } =
                         response.data.data;
+
+                    // Store in localStorage
+                    localStorage.setItem("accessToken", accessToken);
+                    localStorage.setItem("refreshToken", refreshToken);
+                    localStorage.setItem("user", JSON.stringify(user));
 
                     set({
                         user,
@@ -963,6 +1988,11 @@ export const useAuthStore = create(
                     const response = await authService.signup(userData);
                     const { user, accessToken, refreshToken } =
                         response.data.data;
+
+                    // Store in localStorage
+                    localStorage.setItem("accessToken", accessToken);
+                    localStorage.setItem("refreshToken", refreshToken);
+                    localStorage.setItem("user", JSON.stringify(user));
 
                     set({
                         user,
@@ -992,6 +2022,11 @@ export const useAuthStore = create(
                 } catch (error) {
                     console.error("Logout API call failed:", error);
                 } finally {
+                    // Clear localStorage
+                    localStorage.removeItem("accessToken");
+                    localStorage.removeItem("refreshToken");
+                    localStorage.removeItem("user");
+
                     storage.clear();
                     set({
                         user: null,
@@ -1014,6 +2049,9 @@ export const useAuthStore = create(
                         refreshToken,
                     });
                     const { accessToken } = response.data.data;
+
+                    localStorage.setItem("accessToken", accessToken);
+
                     set({ accessToken, error: null });
                     return accessToken;
                 } catch (error) {
@@ -1023,13 +2061,23 @@ export const useAuthStore = create(
             },
 
             clearError: () => set({ error: null }),
+
+            // Update user data (for profile updates)
+            updateUser: (userData) => {
+                set((state) => {
+                    const updatedUser = { ...state.user, ...userData };
+                    localStorage.setItem("user", JSON.stringify(updatedUser));
+                    return { user: updatedUser };
+                });
+            },
         }),
         {
             name: "auth-storage",
             partialize: (state) => ({
+                user: state.user,
                 accessToken: state.accessToken,
                 refreshToken: state.refreshToken,
-                user: state.user,
+                isAuthenticated: state.isAuthenticated,
             }),
         }
     )
@@ -1041,6 +2089,7 @@ export const useAuthStore = create(
 ```js
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
+import { useAuthStore } from "./authStore";
 import { getErrorMessage } from "../utils/errorUtils";
 import { sortConversations, getOtherUser } from "../utils/chatUtils";
 
@@ -1113,6 +2162,9 @@ export const useConversationStore = create((set, get) => ({
     },
 
     getOrCreateConversation: async (user2Id) => {
+        const { user } = useAuthStore.getState();
+        if (!user) throw new Error("User not authenticated");
+
         const existingConversation = get().conversationsList.find(
             (conv) => conv.user1_id === user2Id || conv.user2_id === user2Id
         );
@@ -1182,6 +2234,7 @@ export const useConversationStore = create((set, get) => ({
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
 import { useAuthStore } from "./authStore";
+import { useConversationStore } from "./conversationStore";
 import { getErrorMessage } from "../utils/errorUtils";
 import { validateMessage, sanitizeMessage } from "../utils/validationUtils";
 import { groupMessagesByDate } from "../utils/chatUtils";
@@ -1212,6 +2265,7 @@ export const useMessageStore = create((set, get) => ({
                 [...existingMessages, ...messages].forEach((msg) =>
                     messageMap.set(msg.id, msg)
                 );
+
                 const mergedMessages = Array.from(messageMap.values()).sort(
                     (a, b) => new Date(a.created_at) - new Date(b.created_at)
                 );
@@ -1222,6 +2276,7 @@ export const useMessageStore = create((set, get) => ({
                     pagination: {
                         ...pagination,
                         hasMore: messages.length === limit,
+                        currentPage: page,
                     },
                 });
 
@@ -1239,19 +2294,26 @@ export const useMessageStore = create((set, get) => ({
     },
 
     sendMessage: async (conversationId, messageData) => {
-        // Validate message
-        const validationError = validateMessage(messageData.message_text);
-        if (validationError) {
-            throw new Error(validationError);
+        if (messageData.message_type === "TEXT") {
+            const validationError = validateMessage(messageData.message_text);
+            if (validationError) {
+                throw new Error(validationError);
+            }
         }
 
         const tempId = `temp-${Date.now()}`;
         const { user } = useAuthStore.getState();
 
-        // Sanitize message text
+        if (!user) {
+            throw new Error("User not authenticated");
+        }
+
         const sanitizedData = {
             ...messageData,
-            message_text: sanitizeMessage(messageData.message_text),
+            message_text:
+                messageData.message_type === "TEXT"
+                    ? sanitizeMessage(messageData.message_text)
+                    : messageData.message_text,
         };
 
         const optimisticMessage = {
@@ -1259,7 +2321,12 @@ export const useMessageStore = create((set, get) => ({
             ...sanitizedData,
             conversation_id: conversationId,
             sender_id: user.id,
-            sender: user,
+            sender: {
+                id: user.id,
+                email: user.email,
+                full_name: user.full_name,
+                avatar_url: user.avatar_url,
+            },
             created_at: new Date().toISOString(),
             is_delivered: false,
             is_optimistic: true,
@@ -1286,7 +2353,6 @@ export const useMessageStore = create((set, get) => ({
                 sanitizedData
             );
             const realMessage = response.data.data.message;
-
             set((state) => {
                 const existingData = state.messages.get(conversationId) || {
                     messages: [],
@@ -1307,7 +2373,9 @@ export const useMessageStore = create((set, get) => ({
 
             const { updateConversationLastMessage } =
                 useConversationStore.getState();
-            updateConversationLastMessage(conversationId, realMessage);
+            if (updateConversationLastMessage) {
+                updateConversationLastMessage(conversationId, realMessage);
+            }
 
             return realMessage;
         } catch (error) {
@@ -1343,19 +2411,32 @@ export const useMessageStore = create((set, get) => ({
                 const conversationData = state.messages.get(conversationId);
                 if (!conversationData) return state;
 
+                const { user } = useAuthStore.getState();
+                if (!user) return state;
+
                 const updatedMessages = conversationData.messages.map((msg) => {
                     if (msg.id === messageId) {
-                        const { user } = useAuthStore.getState();
-                        return {
-                            ...msg,
-                            read_receipts: [
-                                ...(msg.read_receipts || []),
-                                {
-                                    reader_id: user.id,
-                                    read_at: new Date().toISOString(),
-                                },
-                            ],
-                        };
+                        const existingReceipts = msg.read_receipts || [];
+                        const alreadyRead = existingReceipts.some(
+                            (receipt) => receipt.reader_id === user.id
+                        );
+
+                        if (!alreadyRead) {
+                            return {
+                                ...msg,
+                                read_receipts: [
+                                    ...existingReceipts,
+                                    {
+                                        reader_id: user.id,
+                                        read_at: new Date().toISOString(),
+                                        reader: {
+                                            id: user.id,
+                                            full_name: user.full_name,
+                                        },
+                                    },
+                                ],
+                            };
+                        }
                     }
                     return msg;
                 });
@@ -1412,7 +2493,7 @@ export const useMessageStore = create((set, get) => ({
 
     getPagination: (conversationId) => {
         const data = get().messages.get(conversationId);
-        return data?.pagination || { hasMore: true };
+        return data?.pagination || { hasMore: true, currentPage: 1 };
     },
 
     getGroupedMessages: (conversationId) => {
@@ -1426,82 +2507,80 @@ export const useMessageStore = create((set, get) => ({
 ## File: stores/uiStore.js
 ```js
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
-export const useUIStore = create((set, get) => ({
-    // State
-    activeSidebar: "conversations",
-    isMobileSidebarOpen: false,
-    modals: {
-        userProfile: false,
-        imagePreview: false,
-        deleteConfirm: false,
-        newConversation: false,
-    },
-    toast: null,
-    theme: "light",
-    loadingStates: new Map(),
-
-    // Actions - UI state only
-    setActiveSidebar: (sidebar) => set({ activeSidebar: sidebar }),
-
-    toggleMobileSidebar: () =>
-        set((state) => ({
-            isMobileSidebarOpen: !state.isMobileSidebarOpen,
-        })),
-
-    openModal: (modalName) =>
-        set((state) => ({
-            modals: { ...state.modals, [modalName]: true },
-        })),
-
-    closeModal: (modalName) =>
-        set((state) => ({
-            modals: { ...state.modals, [modalName]: false },
-        })),
-
-    closeAllModals: () =>
-        set({
+export const useUIStore = create(
+    persist(
+        (set, get) => ({
+            theme: "light",
+            activeSidebar: "conversations",
+            isMobileSidebarOpen: false,
             modals: {
                 userProfile: false,
                 imagePreview: false,
                 deleteConfirm: false,
                 newConversation: false,
             },
+            toast: null,
+            loadingStates: new Map(),
+
+            setTheme: (theme) => {
+                set({ theme });
+                document.documentElement.classList.toggle(
+                    "dark",
+                    theme === "dark"
+                );
+            },
+
+            toggleTheme: () => {
+                const newTheme = get().theme === "light" ? "dark" : "light";
+                set({ theme: newTheme });
+                document.documentElement.classList.toggle(
+                    "dark",
+                    newTheme === "dark"
+                );
+            },
+
+            setActiveSidebar: (sidebar) => set({ activeSidebar: sidebar }),
+            toggleMobileSidebar: () =>
+                set((state) => ({
+                    isMobileSidebarOpen: !state.isMobileSidebarOpen,
+                })),
+            openModal: (modalName) =>
+                set((state) => ({
+                    modals: { ...state.modals, [modalName]: true },
+                })),
+            closeModal: (modalName) =>
+                set((state) => ({
+                    modals: { ...state.modals, [modalName]: false },
+                })),
+            closeAllModals: () =>
+                set({
+                    modals: {
+                        userProfile: false,
+                        imagePreview: false,
+                        deleteConfirm: false,
+                        newConversation: false,
+                    },
+                }),
+            showToast: (toastData) => set({ toast: toastData }),
+            hideToast: () => set({ toast: null }),
+            setLoading: (key, isLoading) =>
+                set((state) => {
+                    const newLoadingStates = new Map(state.loadingStates);
+                    if (isLoading) newLoadingStates.set(key, true);
+                    else newLoadingStates.delete(key);
+                    return { loadingStates: newLoadingStates };
+                }),
+            isLoading: (key) => get().loadingStates.has(key),
+            isModalOpen: (modalName) => get().modals[modalName],
         }),
-
-    showToast: (toastData) => set({ toast: toastData }),
-
-    hideToast: () => set({ toast: null }),
-
-    setTheme: (theme) => {
-        set({ theme });
-        document.documentElement.setAttribute("data-theme", theme);
-        localStorage.setItem("theme", theme);
-    },
-
-    toggleTheme: () =>
-        set((state) => {
-            const newTheme = state.theme === "light" ? "dark" : "light";
-            document.documentElement.setAttribute("data-theme", newTheme);
-            localStorage.setItem("theme", newTheme);
-            return { theme: newTheme };
-        }),
-
-    setLoading: (key, isLoading) =>
-        set((state) => {
-            const newLoadingStates = new Map(state.loadingStates);
-            if (isLoading) {
-                newLoadingStates.set(key, true);
-            } else {
-                newLoadingStates.delete(key);
-            }
-            return { loadingStates: newLoadingStates };
-        }),
-
-    // Selectors
-    isLoading: (key) => get().loadingStates.has(key),
-    isModalOpen: (modalName) => get().modals[modalName],
-}));
+        {
+            name: "ui-storage",
+            partialize: (state) => ({ theme: state.theme }),
+        }
+    )
+);
 
 ```
 
@@ -1548,6 +2627,9 @@ export const useUserStore = create((set, get) => ({
         try {
             const response = await userService.updateProfile(profileData);
             const updatedUser = response.data.data.user;
+
+            const { updateUser } = useAuthStore.getState();
+            updateUser(updatedUser);
 
             set((state) => {
                 const newUsers = new Map(state.users);
@@ -1685,31 +2767,47 @@ import { formatMessageTime } from "./dateUtils";
 
 // Sort conversations by last message time or creation time
 export const sortConversations = (conversations) => {
-    return conversations.sort((a, b) => {
+    if (!Array.isArray(conversations)) return [];
+
+    return [...conversations].sort((a, b) => {
         const aTime = a.last_message?.created_at || a.created_at;
         const bTime = b.last_message?.created_at || b.created_at;
-        return new Date(bTime) - new Date(aTime);
+
+        if (!aTime || !bTime) return 0;
+
+        return new Date(bTime).getTime() - new Date(aTime).getTime();
     });
 };
 
 // Get the other user in a conversation
 export const getOtherUser = (conversation, currentUserId) => {
-    if (!conversation) return null;
+    if (!conversation || !currentUserId) return null;
 
     const { user1, user2 } = conversation;
+
+    if (!user1 || !user2) return null;
+
     return user1.id === currentUserId ? user2 : user1;
 };
 
 // Group messages by date
 export const groupMessagesByDate = (messages) => {
+    if (!Array.isArray(messages)) return {};
+
     const groups = {};
 
     messages.forEach((message) => {
-        const date = new Date(message.created_at).toDateString();
-        if (!groups[date]) {
-            groups[date] = [];
+        if (!message?.created_at) return;
+
+        try {
+            const date = new Date(message.created_at).toDateString();
+            if (!groups[date]) {
+                groups[date] = [];
+            }
+            groups[date].push(message);
+        } catch (error) {
+            console.error("Error grouping message by date:", error);
         }
-        groups[date].push(message);
     });
 
     return groups;
@@ -1717,14 +2815,19 @@ export const groupMessagesByDate = (messages) => {
 
 // Check if user is online
 export const isUserOnline = (user, onlineUsers) => {
-    return user?.is_online || onlineUsers.has(user?.id);
+    if (!user) return false;
+
+    return user.is_online === true || (onlineUsers && onlineUsers.has(user.id));
 };
 
 // Format conversation preview
 export const getConversationPreview = (conversation, currentUserId) => {
-    if (!conversation.last_message) return "No messages yet";
+    if (!conversation) return "No messages yet";
 
     const { last_message } = conversation;
+
+    if (!last_message) return "No messages yet";
+
     const isCurrentUser = last_message.sender_id === currentUserId;
     const prefix = isCurrentUser ? "You: " : "";
 
@@ -1732,7 +2835,32 @@ export const getConversationPreview = (conversation, currentUserId) => {
         return `${prefix}📷 Image`;
     }
 
-    return `${prefix}${last_message.message_text || "Message"}`;
+    // Handle deleted messages
+    if (last_message.message_text === "This message was deleted") {
+        return `${prefix}🗑️ Message deleted`;
+    }
+
+    const preview = last_message.message_text || "Message";
+    return `${prefix}${
+        preview.length > 30 ? preview.substring(0, 30) + "..." : preview
+    }`;
+};
+
+// Check if message is from current user
+export const isOwnMessage = (message, currentUserId) => {
+    return message?.sender_id === currentUserId;
+};
+
+// Format message timestamp for display
+export const formatMessageTimestamp = (timestamp) => {
+    if (!timestamp) return "";
+
+    try {
+        return formatMessageTime(timestamp);
+    } catch (error) {
+        console.error("Error formatting timestamp:", error);
+        return "";
+    }
 };
 
 ```
@@ -1740,42 +2868,120 @@ export const getConversationPreview = (conversation, currentUserId) => {
 ## File: utils/dateUtils.js
 ```js
 export const formatMessageTime = (timestamp) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffInHours = (now - date) / (1000 * 60 * 60);
+    if (!timestamp) return "";
 
-    if (diffInHours < 24) {
-        return date.toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-    } else if (diffInHours < 48) {
-        return "Yesterday";
-    } else {
-        return date.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-        });
+    try {
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return "";
+
+        const now = new Date();
+        const diffInMs = now - date;
+        const diffInHours = diffInMs / (1000 * 60 * 60);
+        const diffInDays = diffInHours / 24;
+
+        if (diffInHours < 1) {
+            const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+            if (diffInMinutes < 1) return "Just now";
+            return `${diffInMinutes}m ago`;
+        }
+
+        if (diffInHours < 24) {
+            return date.toLocaleTimeString("en-US", {
+                hour: "2-digit",
+                minute: "2-digit",
+            });
+        } else if (diffInDays < 2) {
+            return "Yesterday";
+        } else if (diffInDays < 7) {
+            return date.toLocaleDateString("en-US", {
+                weekday: "short",
+            });
+        } else {
+            return date.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+            });
+        }
+    } catch (error) {
+        console.error("Error formatting message time:", error);
+        return "";
     }
 };
 
 export const formatLastSeen = (timestamp) => {
     if (!timestamp) return "Never";
 
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffInMinutes = (now - date) / (1000 * 60);
+    try {
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return "Never";
 
-    if (diffInMinutes < 1) return "Just now";
-    if (diffInMinutes < 60) return `${Math.floor(diffInMinutes)}m ago`;
-    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        const now = new Date();
+        const diffInMinutes = (now - date) / (1000 * 60);
+
+        if (diffInMinutes < 1) return "Just now";
+        if (diffInMinutes < 60) return `${Math.floor(diffInMinutes)}m ago`;
+        if (diffInMinutes < 1440)
+            return `${Math.floor(diffInMinutes / 60)}h ago`;
+
+        return date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+        });
+    } catch (error) {
+        console.error("Error formatting last seen:", error);
+        return "Never";
+    }
 };
 
 export const isToday = (timestamp) => {
-    const date = new Date(timestamp);
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
+    if (!timestamp) return false;
+
+    try {
+        const date = new Date(timestamp);
+        const today = new Date();
+
+        return date.toDateString() === today.toDateString();
+    } catch (error) {
+        console.error("Error checking if date is today:", error);
+        return false;
+    }
+};
+
+export const isYesterday = (timestamp) => {
+    if (!timestamp) return false;
+
+    try {
+        const date = new Date(timestamp);
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+
+        return date.toDateString() === yesterday.toDateString();
+    } catch (error) {
+        console.error("Error checking if date is yesterday:", error);
+        return false;
+    }
+};
+
+export const formatDateHeader = (timestamp) => {
+    if (!timestamp) return "";
+
+    try {
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return "";
+
+        if (isToday(date)) return "Today";
+        if (isYesterday(date)) return "Yesterday";
+
+        return date.toLocaleDateString("en-US", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+        });
+    } catch (error) {
+        console.error("Error formatting date header:", error);
+        return "";
+    }
 };
 
 ```
@@ -1783,19 +2989,66 @@ export const isToday = (timestamp) => {
 ## File: utils/errorUtils.js
 ```js
 export const getErrorMessage = (error) => {
+    if (!error) return "An unexpected error occurred";
+
     if (typeof error === "string") return error;
-    if (error.response?.data?.msg) return error.response.data.msg;
-    if (error.message) return error.message;
+
+    // Axios error
+    if (error.response?.data?.msg) {
+        return error.response.data.msg;
+    }
+
+    // Error object with message
+    if (error.message) {
+        return error.message;
+    }
+
+    // Network error
+    if (error.code === "NETWORK_ERROR" || error.message?.includes("Network")) {
+        return "Network error. Please check your connection.";
+    }
+
+    // Fallback
     return "An unexpected error occurred";
 };
 
 export const isNetworkError = (error) => {
-    return !error.response && error.message?.includes("Network");
+    return (
+        !error?.response &&
+        (error?.code === "NETWORK_ERROR" || error?.message?.includes("Network"))
+    );
+};
+
+export const isAuthError = (error) => {
+    return error?.response?.status === 401;
+};
+
+export const isServerError = (error) => {
+    return error?.response?.status >= 500;
 };
 
 export const handleApiError = (error, fallback = "Something went wrong") => {
     console.error("API Error:", error);
-    return getErrorMessage(error) || fallback;
+
+    const message = getErrorMessage(error);
+
+    if (isNetworkError(error)) {
+        return "Network error. Please check your connection.";
+    }
+
+    if (isAuthError(error)) {
+        return "Session expired. Please login again.";
+    }
+
+    return message || fallback;
+};
+
+export const logError = (error, context = "") => {
+    console.error(`Error${context ? ` in ${context}` : ""}:`, {
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data,
+    });
 };
 
 ```
@@ -1807,6 +3060,10 @@ export const validateFile = (file, options = {}) => {
         maxSize = 5 * 1024 * 1024, // 5MB
         allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"],
     } = options;
+
+    if (!file) {
+        throw new Error("No file provided");
+    }
 
     if (file.size > maxSize) {
         throw new Error(
@@ -1825,28 +3082,65 @@ export const getFilePreview = (file) => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target.result);
-        reader.onerror = (error) => reject(error);
+        reader.onerror = (error) => reject(new Error("Failed to read file"));
         reader.readAsDataURL(file);
     });
 };
 
-export const compressImage = (file, quality = 0.8) => {
-    return new Promise((resolve) => {
+export const compressImage = (file, quality = 0.8, maxWidth = 1024) => {
+    return new Promise((resolve, reject) => {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         const img = new Image();
 
         img.onload = () => {
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-            canvas.toBlob(resolve, "image/jpeg", quality);
+            // Calculate new dimensions while maintaining aspect ratio
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxWidth) {
+                height = (height * maxWidth) / width;
+                width = maxWidth;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+
+            // Draw and compress
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob(
+                (blob) => {
+                    if (!blob) {
+                        reject(new Error("Canvas to Blob conversion failed"));
+                        return;
+                    }
+                    resolve(
+                        new File([blob], file.name, {
+                            type: "image/jpeg",
+                            lastModified: Date.now(),
+                        })
+                    );
+                },
+                "image/jpeg",
+                quality
+            );
         };
 
+        img.onerror = () => reject(new Error("Failed to load image"));
         img.src = URL.createObjectURL(file);
     });
 };
 
+export const getFileSize = (bytes) => {
+    if (bytes === 0) return "0 Bytes";
+
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
 
 ```
 
@@ -1936,15 +3230,17 @@ export const tokenStorage = {
 ## File: utils/stringUtils.js
 ```js
 export const truncateText = (text, maxLength = 50) => {
-    if (!text) return "";
+    if (!text || typeof text !== "string") return "";
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + "...";
 };
 
 export const getInitials = (name) => {
-    if (!name) return "?";
+    if (!name || typeof name !== "string") return "?";
+
     return name
-        .split(" ")
+        .trim()
+        .split(/\s+/)
         .map((part) => part.charAt(0))
         .join("")
         .toUpperCase()
@@ -1952,11 +3248,31 @@ export const getInitials = (name) => {
 };
 
 export const sanitizeMessage = (text) => {
+    if (!text || typeof text !== "string") return "";
+
     return text
         .trim()
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/\n/g, "<br>");
+};
+
+export const unsanitizeMessage = (text) => {
+    if (!text || typeof text !== "string") return "";
+
+    return text
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/<br>/g, "\n");
+};
+
+export const capitalizeFirst = (text) => {
+    if (!text || typeof text !== "string") return "";
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+};
+
+export const generateRandomId = (prefix = "") => {
+    return `${prefix}${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 };
 
 ```
@@ -1992,23 +3308,67 @@ export const copyToClipboard = async (text) => {
 
 ## File: utils/validationUtils.js
 ```js
+// utils/validationUtils.js - COMPLETE FIX
 export const isValidEmail = (email) => {
+    if (!email || typeof email !== "string") return false;
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+    return emailRegex.test(email.trim());
 };
 
 export const isValidPassword = (password) => {
-    return password && password.length >= 6;
+    if (!password || typeof password !== "string") return false;
+
+    // At least 6 characters, with at least one letter and one number
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d).{6,}$/;
+    return passwordRegex.test(password);
 };
 
 export const isValidName = (name) => {
-    return name && name.trim().length >= 2;
+    if (!name || typeof name !== "string") return false;
+
+    const trimmed = name.trim();
+    return trimmed.length >= 2 && trimmed.length <= 100;
 };
 
 export const validateMessage = (text) => {
-    const trimmed = text.trim();
+    if (!text && text !== "") {
+        return "Message is required";
+    }
+
+    const trimmed = text.toString().trim();
     if (!trimmed) return "Message cannot be empty";
     if (trimmed.length > 1000) return "Message too long (max 1000 characters)";
+
+    return null;
+};
+
+export const validateConversationId = (id) => {
+    if (!id || typeof id !== "string") return false;
+
+    const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
+};
+
+export const validateFileUpload = (file, options = {}) => {
+    const {
+        maxSize = 5 * 1024 * 1024,
+        allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"],
+    } = options;
+
+    if (!file) {
+        return "No file selected";
+    }
+
+    if (file.size > maxSize) {
+        return `File must be smaller than ${maxSize / 1024 / 1024}MB`;
+    }
+
+    if (!allowedTypes.includes(file.type)) {
+        return "Only JPEG, PNG, WebP, and GIF images are allowed";
+    }
+
     return null;
 };
 

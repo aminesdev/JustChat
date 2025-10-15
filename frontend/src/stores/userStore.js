@@ -40,6 +40,9 @@ export const useUserStore = create((set, get) => ({
             const response = await userService.updateProfile(profileData);
             const updatedUser = response.data.data.user;
 
+            const { updateUser } = useAuthStore.getState();
+            updateUser(updatedUser);
+
             set((state) => {
                 const newUsers = new Map(state.users);
                 newUsers.set(updatedUser.id, updatedUser);

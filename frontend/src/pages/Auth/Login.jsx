@@ -1,5 +1,5 @@
 import {useState} from 'react';
-import {Link} from 'react-router-dom';
+import {Link, useNavigate} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Input} from '@/components/ui/input';
@@ -9,6 +9,7 @@ import {ThemeToggle} from '@/components/ui/theme-toggle';
 import {Github} from 'lucide-react';
 
 const Login = () => {
+    const navigate = useNavigate();
     const [formData, setFormData] = useState({
         email: '',
         password: '',
@@ -23,8 +24,11 @@ const Login = () => {
 
         try {
             await login(formData);
+            // If successful, navigation happens automatically via App.jsx routing
+            navigate('/chat');
         } catch (error) {
             console.error('Login failed:', error);
+            // Error is already set by the store
         } finally {
             setIsLoading(false);
         }
@@ -39,7 +43,8 @@ const Login = () => {
     };
 
     const handleGitHubLogin = () => {
-        window.location.href = `${import.meta.env.VITE_API_URL || 'http://localhost:5001/api'}/auth/oauth/github`;
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+        window.location.href = `${apiUrl}/auth/oauth/github`;
     };
 
     return (
@@ -128,7 +133,7 @@ const Login = () => {
                                     className="w-full"
                                     disabled={isLoading}
                                 >
-                                    {isLoading ? 'Signing in...' : 'Sign In'}
+                                    {isLoading ? 'Signing in...' : 'Log In'}
                                 </Button>
                             </form>
 
@@ -146,10 +151,10 @@ const Login = () => {
                 </div>
             </div>
 
-           <div className="flex-1 hidden lg:flex items-center justify-center p-8">
+            <div className="flex-1 hidden lg:flex items-center justify-center p-8">
                 <div className="w-full max-w-md">
-                    <img 
-                        src="/Login.svg" 
+                    <img
+                        src="/Login.svg"
                         alt="Login Illustration"
                         className="w-full h-auto"
                     />
