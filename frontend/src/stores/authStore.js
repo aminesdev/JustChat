@@ -123,15 +123,21 @@ export const useAuthStore = create(
             initialize: () => {
                 const accessToken = localStorage.getItem("accessToken");
                 const refreshToken = localStorage.getItem("refreshToken");
-                const user = storage.get("user");
+                const userStr = localStorage.getItem("user");
 
-                if (accessToken && user) {
-                    set({
-                        accessToken,
-                        refreshToken,
-                        user,
-                        isAuthenticated: true,
-                    });
+                if (accessToken && userStr) {
+                    try {
+                        const user = JSON.parse(userStr);
+                        set({
+                            user,
+                            accessToken,
+                            refreshToken,
+                            isAuthenticated: true,
+                        });
+                    } catch (error) {
+                        console.error("Error parsing user data:", error);
+                        storage.clear();
+                    }
                 }
             },
         }),
