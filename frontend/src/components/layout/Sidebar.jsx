@@ -6,6 +6,38 @@ import {X, MessageSquare, Users, Search, Loader2} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
 import {useState, useEffect} from 'react';
 
+// Avatar URL helper function
+const getAvatarUrl = (url) => {
+    if (!url) return null;
+
+    // Already a full URL
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url;
+    }
+
+    // Cloudinary URL without protocol
+    if (url.includes('cloudinary.com') || url.startsWith('res.cloudinary.com')) {
+        if (url.startsWith('//')) {
+            return `https:${url}`;
+        } else if (url.startsWith('res.cloudinary.com')) {
+            return `https://${url}`;
+        }
+        return url;
+    }
+
+    // Relative path
+    if (url.startsWith('/')) {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+        const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
+        return `${baseUrl}${url}`;
+    }
+
+    // Filename only
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+    const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
+    return `${baseUrl}/uploads/${url}`;
+};
+
 const Sidebar = ({isOpen, onClose}) => {
     const {
         conversationsList,
@@ -145,7 +177,20 @@ const Sidebar = ({isOpen, onClose}) => {
                                 >
                                     <div className="flex items-start gap-3">
                                         <div className="relative">
-                                            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                                            {otherUser.avatar_url ? (
+                                                <img
+                                                    src={getAvatarUrl(otherUser.avatar_url)}
+                                                    alt={otherUser.full_name}
+                                                    className="w-12 h-12 rounded-full object-cover border border-border"
+                                                    onError={(e) => {
+                                                        // Fallback to initials if image fails to load
+                                                        e.target.style.display = 'none';
+                                                        const fallback = e.target.nextElementSibling;
+                                                        if (fallback) fallback.style.display = 'flex';
+                                                    }}
+                                                />
+                                            ) : null}
+                                            <div className={`w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center border border-border ${otherUser.avatar_url ? 'hidden' : 'flex'}`}>
                                                 <span className="text-sm font-medium text-primary">
                                                     {otherUser.full_name.charAt(0).toUpperCase()}
                                                 </span>
@@ -200,7 +245,20 @@ const Sidebar = ({isOpen, onClose}) => {
                             >
                                 <div className="flex items-center gap-3">
                                     <div className="relative">
-                                        <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                                        {userItem.avatar_url ? (
+                                            <img
+                                                src={getAvatarUrl(userItem.avatar_url)}
+                                                alt={userItem.full_name}
+                                                className="w-12 h-12 rounded-full object-cover border border-border"
+                                                onError={(e) => {
+                                                    // Fallback to initials if image fails to load
+                                                    e.target.style.display = 'none';
+                                                    const fallback = e.target.nextElementSibling;
+                                                    if (fallback) fallback.style.display = 'flex';
+                                                }}
+                                            />
+                                        ) : null}
+                                        <div className={`w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center border border-border ${userItem.avatar_url ? 'hidden' : 'flex'}`}>
                                             <span className="text-sm font-medium text-primary">
                                                 {userItem.full_name.charAt(0).toUpperCase()}
                                             </span>
@@ -288,6 +346,7 @@ const Sidebar = ({isOpen, onClose}) => {
                         {renderContent()}
                     </div>
 
+                    {/* Profile Button with Avatar */}
                     <div className="p-4 border-t border-border">
                         <Button
                             variant="ghost"
@@ -295,10 +354,25 @@ const Sidebar = ({isOpen, onClose}) => {
                             onClick={handleProfileClick}
                         >
                             <div className="flex items-center gap-3 w-full">
-                                <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
-                                    <span className="text-xs font-medium text-primary-foreground">
-                                        {user?.full_name?.charAt(0) || 'U'}
-                                    </span>
+                                <div className="relative">
+                                    {user?.avatar_url ? (
+                                        <img
+                                            src={getAvatarUrl(user.avatar_url)}
+                                            alt={user?.full_name || 'User'}
+                                            className="w-8 h-8 rounded-full object-cover border border-border"
+                                            onError={(e) => {
+                                                // Fallback to initials if image fails to load
+                                                e.target.style.display = 'none';
+                                                const fallback = e.target.nextElementSibling;
+                                                if (fallback) fallback.style.display = 'flex';
+                                            }}
+                                        />
+                                    ) : null}
+                                    <div className={`w-8 h-8 bg-primary rounded-full flex items-center justify-center border border-border ${user?.avatar_url ? 'hidden' : 'flex'}`}>
+                                        <span className="text-xs font-medium text-primary-foreground">
+                                            {user?.full_name?.charAt(0) || 'U'}
+                                        </span>
+                                    </div>
                                 </div>
                                 <div className="flex-1 min-w-0 text-left">
                                     <p className="text-sm font-medium truncate">{user?.full_name}</p>

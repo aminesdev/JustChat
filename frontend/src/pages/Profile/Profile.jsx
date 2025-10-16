@@ -6,7 +6,7 @@ import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {useAuthStore} from '@/stores/authStore';
 import {useUserStore} from '@/stores/userStore';
-import {User, Mail, Camera, Save, X, Key, Upload} from 'lucide-react';
+import {User, Mail, Camera, Save, X, Key} from 'lucide-react';
 import ProfileSkeleton from "@/components/ui/skeleton/ProfileSkeleton";
 import {useNavigate} from 'react-router-dom';
 
@@ -119,6 +119,13 @@ const Profile = () => {
     const handleAvatarChange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
+        // Validate file type - only allow JPEG
+        const allowedTypes = ['image/jpeg', 'image/jpg'];
+        if (!allowedTypes.includes(file.type)) {
+            useUserStore.setState({error: 'Only JPEG (.jpeg, .jpg) images are allowed'});
+            return;
+        }
 
         if (!file.type.startsWith('image/')) {
             useUserStore.setState({error: 'Please select a valid image file'});
@@ -261,7 +268,7 @@ const Profile = () => {
                             <CardHeader>
                                 <CardTitle>Profile Picture</CardTitle>
                                 <CardDescription>
-                                    {isEditing ? 'Select a new profile photo' : 'Your profile photo'}
+                                    {isEditing ? 'Select a new profile photo (JPEG only)' : 'Your profile photo'}
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
@@ -293,7 +300,7 @@ const Profile = () => {
                                                 <input
                                                     id="avatar-upload"
                                                     type="file"
-                                                    accept="image/jpeg,image/png,image/webp,image/gif"
+                                                    accept=".jpeg,.jpg"
                                                     onChange={handleAvatarChange}
                                                     className="hidden"
                                                     disabled={isLoading}
@@ -317,11 +324,7 @@ const Profile = () => {
                                             <p className="text-sm text-muted-foreground">
                                                 Click "Edit Profile" to change your photo
                                             </p>
-                                            {user?.avatar_url && (
-                                                <p className="text-xs text-muted-foreground mt-1">
-                                                    Current avatar URL: {user.avatar_url}
-                                                </p>
-                                            )}
+                                            {/* Removed the URL display */}
                                         </div>
                                     )}
                                 </div>
