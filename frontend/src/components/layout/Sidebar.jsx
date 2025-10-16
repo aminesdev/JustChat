@@ -5,38 +5,7 @@ import {Button} from '@/components/ui/button';
 import {X, MessageSquare, Users, Search, Loader2} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
 import {useState, useEffect} from 'react';
-
-// Avatar URL helper function
-const getAvatarUrl = (url) => {
-    if (!url) return null;
-
-    // Already a full URL
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url;
-    }
-
-    // Cloudinary URL without protocol
-    if (url.includes('cloudinary.com') || url.startsWith('res.cloudinary.com')) {
-        if (url.startsWith('//')) {
-            return `https:${url}`;
-        } else if (url.startsWith('res.cloudinary.com')) {
-            return `https://${url}`;
-        }
-        return url;
-    }
-
-    // Relative path
-    if (url.startsWith('/')) {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-        const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
-        return `${baseUrl}${url}`;
-    }
-
-    // Filename only
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-    const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
-    return `${baseUrl}/uploads/${url}`;
-};
+import {getAvatarUrl} from '@/utils/avatarUtils';
 
 const Sidebar = ({isOpen, onClose}) => {
     const {

@@ -9,6 +9,7 @@ import {useUserStore} from '@/stores/userStore';
 import {User, Mail, Camera, Save, X, Key} from 'lucide-react';
 import ProfileSkeleton from "@/components/ui/skeleton/ProfileSkeleton";
 import {useNavigate} from 'react-router-dom';
+import {getAvatarUrl, validateAvatarFile} from '@/utils/avatarUtils';
 
 const Profile = () => {
     const {user, isAuthenticated, updateUser} = useAuthStore();
@@ -25,10 +26,13 @@ const Profile = () => {
         confirmPassword: '',
     });
     const [avatarFile, setAvatarFile] = useState(null);
-    const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || '');
+    const [avatarPreview, setAvatarPreview] = useState('');
     const [success, setSuccess] = useState('');
     const [pageLoading, setPageLoading] = useState(true);
     const [hasLoadedProfile, setHasLoadedProfile] = useState(false);
+
+    console.log("🔍 Profile - Current user:", user);
+    console.log("🔍 Profile - Avatar URL:", user?.avatar_url);
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -36,41 +40,39 @@ const Profile = () => {
             return;
         }
 
-        if (!hasLoadedProfile && user) {
-            const initializeProfile = async () => {
-                try {
-                    const accessToken = localStorage.getItem("accessToken");
-                    const refreshToken = localStorage.getItem("refreshToken");
-
-                    if (!accessToken || !refreshToken) {
-                        setPageLoading(false);
-                        setHasLoadedProfile(true);
-                        return;
-                    }
-
-                    const userStore = useUserStore.getState();
-                    if (!userStore.currentUser) {
-                        await userStore.loadCurrentUser();
-                    }
-                } catch (error) {
-                } finally {
-                    setPageLoading(false);
-                    setHasLoadedProfile(true);
+        // Always load user profile to get complete data including avatar
+        const initializeProfile = async () => {
+            try {
+                const userStore = useUserStore.getState();
+                if (!userStore.currentUser || !user?.avatar_url) {
+                    console.log("🔄 Profile - Loading user profile data...");
+                    await userStore.loadCurrentUser();
                 }
-            };
+            } catch (error) {
+                console.error('Profile initialization error:', error);
+            } finally {
+                setPageLoading(false);
+                setHasLoadedProfile(true);
+            }
+        };
 
-            initializeProfile();
-        } else {
-            setPageLoading(false);
-        }
-    }, [user, hasLoadedProfile, isAuthenticated, navigate]);
+        initializeProfile();
+    }, [isAuthenticated, navigate]);
 
-    // Reset avatar preview when user changes
+    // Set avatar preview from user data - use both authStore and userStore data
     useEffect(() => {
-        if (user?.avatar_url) {
-            setAvatarPreview(getAvatarUrl(user.avatar_url));
+        const userStore = useUserStore.getState();
+        const currentUser = userStore.currentUser || user;
+
+        if (currentUser?.avatar_url) {
+            const processedUrl = getAvatarUrl(currentUser.avatar_url);
+            console.log('🔄 Profile - Setting avatar preview:', processedUrl);
+            setAvatarPreview(processedUrl);
+        } else {
+            console.log('🔄 Profile - No avatar URL available');
+            setAvatarPreview('');
         }
-    }, [user]);
+    }, [user?.avatar_url]);
 
     const handleSave = async () => {
         clearError();
@@ -100,19 +102,15 @@ const Profile = () => {
                 setIsEditing(false);
                 setAvatarFile(null);
 
-                // Force refresh user data from server
-                const userStore = useUserStore.getState();
-                await userStore.loadCurrentUser();
-                const freshUser = userStore.currentUser;
-
-                if (freshUser) {
-                    updateUser(freshUser);
-                    if (freshUser.avatar_url) {
-                        setAvatarPreview(getAvatarUrl(freshUser.avatar_url));
-                    }
+                // Update local avatar preview
+                if (updatedUser.avatar_url) {
+                    const newAvatarUrl = getAvatarUrl(updatedUser.avatar_url);
+                    console.log('✅ Profile - New avatar URL after update:', newAvatarUrl);
+                    setAvatarPreview(newAvatarUrl);
                 }
             }
         } catch (error) {
+            console.error('Profile update error:', error);
         }
     };
 
@@ -120,20 +118,9 @@ const Profile = () => {
         const file = e.target.files[0];
         if (!file) return;
 
-        // Validate file type - only allow JPEG
-        const allowedTypes = ['image/jpeg', 'image/jpg'];
-        if (!allowedTypes.includes(file.type)) {
-            useUserStore.setState({error: 'Only JPEG (.jpeg, .jpg) images are allowed'});
-            return;
-        }
-
-        if (!file.type.startsWith('image/')) {
-            useUserStore.setState({error: 'Please select a valid image file'});
-            return;
-        }
-
-        if (file.size > 5 * 1024 * 1024) {
-            useUserStore.setState({error: 'Image must be smaller than 5MB'});
+        const validationError = validateAvatarFile(file);
+        if (validationError) {
+            useUserStore.setState({error: validationError});
             return;
         }
 
@@ -176,6 +163,7 @@ const Profile = () => {
             });
             setIsChangingPassword(false);
         } catch (error) {
+            console.error('Password change error:', error);
         }
     };
 
@@ -184,7 +172,10 @@ const Profile = () => {
             full_name: user?.full_name || '',
         });
         setAvatarFile(null);
-        setAvatarPreview(user?.avatar_url ? getAvatarUrl(user.avatar_url) : '');
+        // Reset to current user avatar
+        const userStore = useUserStore.getState();
+        const currentUser = userStore.currentUser || user;
+        setAvatarPreview(currentUser?.avatar_url ? getAvatarUrl(currentUser.avatar_url) : '');
         clearError();
         setSuccess('');
         setIsEditing(false);
@@ -197,35 +188,14 @@ const Profile = () => {
 
     const passwordsMatch = passwordData.newPassword === passwordData.confirmPassword || !passwordData.confirmPassword;
 
-    const getAvatarUrl = (url) => {
-        if (!url) return null;
-
-        console.log('Original avatar URL:', url);
-
-        // If it's already a full URL, return as is
-        if (url.startsWith('http')) return url;
-
-        // If it starts with /, it's a relative path to the backend
-        if (url.startsWith('/')) {
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-            const fullUrl = `${apiUrl}${url}`;
-            console.log('Constructed avatar URL:', fullUrl);
-            return fullUrl;
-        }
-
-        // If it's just a filename, assume it's in uploads directory
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-        const fullUrl = `${apiUrl}/uploads/${url}`;
-        console.log('Constructed avatar URL from filename:', fullUrl);
-        return fullUrl;
-    };
-
     const handleEditClick = () => {
         setIsEditing(true);
         setFormData({
             full_name: user?.full_name || '',
         });
-        setAvatarPreview(user?.avatar_url ? getAvatarUrl(user.avatar_url) : '');
+        const userStore = useUserStore.getState();
+        const currentUser = userStore.currentUser || user;
+        setAvatarPreview(currentUser?.avatar_url ? getAvatarUrl(currentUser.avatar_url) : '');
         setAvatarFile(null);
     };
 
@@ -281,12 +251,15 @@ const Profile = () => {
                                                     alt="Profile"
                                                     className="w-32 h-32 rounded-full object-cover"
                                                     onError={(e) => {
-                                                        console.error('Failed to load avatar image:', avatarPreview);
+                                                        console.error('❌ Profile - Failed to load avatar image:', avatarPreview);
                                                         e.target.style.display = 'none';
                                                         const nextSibling = e.target.nextSibling;
                                                         if (nextSibling && nextSibling.style) {
                                                             nextSibling.style.display = 'flex';
                                                         }
+                                                    }}
+                                                    onLoad={(e) => {
+                                                        console.log('✅ Profile - Avatar loaded successfully');
                                                     }}
                                                 />
                                             ) : null}
@@ -324,13 +297,13 @@ const Profile = () => {
                                             <p className="text-sm text-muted-foreground">
                                                 Click "Edit Profile" to change your photo
                                             </p>
-                                            {/* Removed the URL display */}
                                         </div>
                                     )}
                                 </div>
                             </CardContent>
                         </Card>
 
+                        {/* Rest of the Profile component remains the same */}
                         <Card className="lg:col-span-2">
                             <CardHeader>
                                 <CardTitle>Profile Information</CardTitle>

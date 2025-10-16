@@ -4,7 +4,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 const api = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 30000, // 15 seconds
+    timeout: 30000, // 30 seconds
     headers: {
         "Content-Type": "application/json",
     },
@@ -41,24 +41,22 @@ api.interceptors.response.use(
             return Promise.reject(networkError);
         }
 
-        // Token refresh logic - ONLY if we have a refresh token
+        // Token refresh logic - ONLY for 401 errors and when we have a refresh token
         if (error.response?.status === 401 && !originalRequest._retry) {
             const refreshToken = localStorage.getItem("refreshToken");
 
-            // If no refresh token, don't attempt refresh
+            // If no refresh token, don't attempt refresh - this is likely a login error
             if (!refreshToken) {
-                console.error("No refresh token available");
-                // Clear auth data and redirect to login
-                localStorage.removeItem("accessToken");
-                localStorage.removeItem("refreshToken");
-                localStorage.removeItem("user");
+                console.log("No refresh token available - likely login error");
+                // Don't clear tokens or redirect here - let the login component handle the error
+                return Promise.reject(error);
+            }
 
-                // Only redirect if not already on login page
-                if (window.location.pathname !== "/login") {
-                    window.location.href = "/login";
-                }
-
-                return Promise.reject(new Error("No refresh token available"));
+            // Only attempt refresh if we have a refresh token and this is not an auth endpoint
+            const isAuthEndpoint = originalRequest.url.includes("/auth/");
+            if (isAuthEndpoint) {
+                console.log("Auth endpoint - skipping token refresh");
+                return Promise.reject(error);
             }
 
             originalRequest._retry = true;
@@ -77,17 +75,19 @@ api.interceptors.response.use(
             } catch (refreshError) {
                 console.error("Token refresh failed:", refreshError);
 
-                // Clear auth data
+                // Clear auth data only on refresh failure (session expired)
                 localStorage.removeItem("accessToken");
                 localStorage.removeItem("refreshToken");
                 localStorage.removeItem("user");
 
-                // Redirect to login
+                // Redirect to login only if we're not already on login page
                 if (window.location.pathname !== "/login") {
                     window.location.href = "/login";
                 }
 
-                return Promise.reject(refreshError);
+                return Promise.reject(
+                    new Error("Session expired. Please login again.")
+                );
             }
         }
 

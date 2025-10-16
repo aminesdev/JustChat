@@ -2,38 +2,7 @@ import {Button} from '@/components/ui/button';
 import {useAuthStore} from '@/stores/authStore';
 import {Menu, LogOut} from 'lucide-react';
 import {ThemeToggle} from '@/components/ui/theme-toggle';
-
-// Avatar URL helper function
-const getAvatarUrl = (url) => {
-    if (!url) return null;
-
-    // Already a full URL
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url;
-    }
-
-    // Cloudinary URL without protocol
-    if (url.includes('cloudinary.com') || url.startsWith('res.cloudinary.com')) {
-        if (url.startsWith('//')) {
-            return `https:${url}`;
-        } else if (url.startsWith('res.cloudinary.com')) {
-            return `https://${url}`;
-        }
-        return url;
-    }
-
-    // Relative path
-    if (url.startsWith('/')) {
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-        const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
-        return `${baseUrl}${url}`;
-    }
-
-    // Filename only
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-    const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
-    return `${baseUrl}/uploads/${url}`;
-};
+import {getAvatarUrl} from '@/utils/avatarUtils';
 
 const Navbar = ({onMenuClick}) => {
     const {logout, user} = useAuthStore();
@@ -41,6 +10,9 @@ const Navbar = ({onMenuClick}) => {
     const handleLogout = async () => {
         await logout();
     };
+
+    console.log("🔍 Navbar - Current user:", user);
+    console.log("🔍 Navbar - Avatar URL:", user?.avatar_url);
 
     return (
         <header className="border-b border-border bg-card/50 backdrop-blur-sm">
@@ -69,10 +41,13 @@ const Navbar = ({onMenuClick}) => {
                                     alt={user?.full_name || 'User'}
                                     className="w-8 h-8 rounded-full object-cover border border-border"
                                     onError={(e) => {
-                                        // Fallback to initials if image fails to load
+                                        console.error('❌ Navbar - Failed to load avatar:', user?.avatar_url);
                                         e.target.style.display = 'none';
                                         const fallback = e.target.nextElementSibling;
                                         if (fallback) fallback.style.display = 'flex';
+                                    }}
+                                    onLoad={(e) => {
+                                        console.log('✅ Navbar - Avatar loaded successfully');
                                     }}
                                 />
                             ) : null}

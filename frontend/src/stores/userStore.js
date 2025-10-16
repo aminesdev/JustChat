@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { userService } from "../services/userService";
 import { getErrorMessage } from "../utils/errorUtils";
+import { useAuthStore } from "./authStore";
 
 export const useUserStore = create((set, get) => ({
     currentUser: null,
@@ -32,12 +33,20 @@ export const useUserStore = create((set, get) => ({
             const response = await userService.getProfile();
             const user = response.data.data.user;
 
+            console.log("👤 UserStore - Loaded current user:", user);
+
+            // Sync the complete user data to authStore
+            const authStore = useAuthStore.getState();
+            authStore.syncUserData(user);
+
             set({
                 currentUser: user,
                 users: [user],
                 isLoading: false,
                 hasLoadedCurrentUser: true,
             });
+
+            return user;
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load profile";
@@ -109,6 +118,12 @@ export const useUserStore = create((set, get) => ({
                 throw new Error("Invalid user data in response");
             }
 
+            console.log("✅ Profile updated - New user data:", updatedUser);
+
+            // Sync updated user data to authStore
+            const authStore = useAuthStore.getState();
+            authStore.syncUserData(updatedUser);
+
             set({
                 currentUser: updatedUser,
                 isLoading: false,
@@ -143,6 +158,10 @@ export const useUserStore = create((set, get) => ({
             if (!updatedUser || !updatedUser.id) {
                 throw new Error("Invalid user data in response");
             }
+
+            // Sync updated user data to authStore
+            const authStore = useAuthStore.getState();
+            authStore.syncUserData(updatedUser);
 
             set({
                 currentUser: updatedUser,
