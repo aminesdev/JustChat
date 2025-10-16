@@ -28,7 +28,7 @@ export const authValidation = {
 export const profileValidation = {
     updateProfile: Joi.object({
         full_name: Joi.string().min(2).max(100).optional(),
-        avatar_file: Joi.any().optional(),
+        // Remove avatar_file from Joi validation since it's handled by Multer
         currentPassword: Joi.string().min(6).optional(),
         newPassword: Joi.string().min(6).optional(),
     }).custom((value, helpers) => {

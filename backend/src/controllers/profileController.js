@@ -11,7 +11,13 @@ import {
 export const updateProfile = async (req, res) => {
     try {
         const userId = req.user.userId;
-        const updatedUser = await updateProfileService(userId, req.body);
+
+        const updateData = {
+            ...req.body,
+            avatar_file: req.file,
+        };
+
+        const updatedUser = await updateProfileService(userId, updateData);
 
         successResponse(res, "Profile updated successfully", {
             user: updatedUser,

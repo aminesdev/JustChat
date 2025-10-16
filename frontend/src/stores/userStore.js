@@ -1,62 +1,69 @@
 import { create } from "zustand";
 import { userService } from "../services/userService";
 import { getErrorMessage } from "../utils/errorUtils";
-import { truncateText } from "../utils/stringUtils";
 
 export const useUserStore = create((set, get) => ({
     currentUser: null,
-    users: new Map(),
+    users: [],
     searchedUsers: [],
     onlineUsers: new Set(),
     isLoading: false,
     error: null,
+    hasLoadedCurrentUser: false,
 
     loadCurrentUser: async () => {
+        if (get().hasLoadedCurrentUser) {
+            return;
+        }
+
+        const accessToken = localStorage.getItem("accessToken");
+        const refreshToken = localStorage.getItem("refreshToken");
+
+        if (!accessToken || !refreshToken) {
+            set({
+                error: "Authentication required",
+                hasLoadedCurrentUser: true,
+            });
+            return;
+        }
+
         set({ isLoading: true, error: null });
         try {
             const response = await userService.getProfile();
             const user = response.data.data.user;
 
-            set((state) => {
-                const newUsers = new Map(state.users);
-                newUsers.set(user.id, user);
-                return {
-                    currentUser: user,
-                    users: newUsers,
-                    isLoading: false,
-                };
+            set({
+                currentUser: user,
+                users: [user],
+                isLoading: false,
+                hasLoadedCurrentUser: true,
             });
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load profile";
-            set({ isLoading: false, error: errorMessage });
-            throw new Error(errorMessage);
+            set({
+                isLoading: false,
+                error: errorMessage,
+                hasLoadedCurrentUser: true,
+            });
         }
     },
 
-    updateProfile: async (profileData) => {
+    getAllUsers: async () => {
         set({ isLoading: true, error: null });
         try {
-            const response = await userService.updateProfile(profileData);
-            const updatedUser = response.data.data.user;
+            const response = await userService.getAllUsers();
+            const users = response.data.data.users;
 
-            const { updateUser } = useAuthStore.getState();
-            updateUser(updatedUser);
-
-            set((state) => {
-                const newUsers = new Map(state.users);
-                newUsers.set(updatedUser.id, updatedUser);
-                return {
-                    currentUser: updatedUser,
-                    users: newUsers,
-                    isLoading: false,
-                };
+            set({
+                users: users,
+                isLoading: false,
             });
 
-            return updatedUser;
+            return users;
         } catch (error) {
             const errorMessage =
-                getErrorMessage(error) || "Failed to update profile";
+                getErrorMessage(error) || "Failed to load users";
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
@@ -74,14 +81,9 @@ export const useUserStore = create((set, get) => ({
             const response = await userService.searchUsers(trimmedQuery, limit);
             const users = response.data.data.users;
 
-            set((state) => {
-                const newUsers = new Map(state.users);
-                users.forEach((user) => newUsers.set(user.id, user));
-                return {
-                    searchedUsers: users,
-                    users: newUsers,
-                    isLoading: false,
-                };
+            set({
+                searchedUsers: users,
+                isLoading: false,
             });
 
             return users;
@@ -93,57 +95,80 @@ export const useUserStore = create((set, get) => ({
         }
     },
 
-    loadUserById: async (userId) => {
-        const cachedUser = get().users.get(userId);
-        if (cachedUser) return cachedUser;
-
+    updateProfile: async (profileData) => {
         set({ isLoading: true, error: null });
         try {
-            const response = await userService.getUserById(userId);
-            const user = response.data.data.user;
+            const response = await userService.updateProfile(profileData);
+            const updatedUser =
+                response.data?.data?.user ||
+                response.data?.data ||
+                response.data?.user ||
+                response.data;
 
-            set((state) => {
-                const newUsers = new Map(state.users);
-                newUsers.set(user.id, user);
-                return {
-                    users: newUsers,
-                    isLoading: false,
-                };
+            if (!updatedUser || !updatedUser.id) {
+                throw new Error("Invalid user data in response");
+            }
+
+            set({
+                currentUser: updatedUser,
+                isLoading: false,
+                error: null,
             });
 
-            return user;
+            return updatedUser;
         } catch (error) {
             const errorMessage =
-                getErrorMessage(error) || "Failed to load user";
-            set({ isLoading: false, error: errorMessage });
-            throw new Error(errorMessage);
-        }
-    },
-
-    updateOnlineStatus: async (isOnline) => {
-        try {
-            await userService.updateOnlineStatus(isOnline);
-
-            set((state) => {
-                if (!state.currentUser) return state;
-
-                const updatedUser = {
-                    ...state.currentUser,
-                    is_online: isOnline,
-                };
-                const newUsers = new Map(state.users);
-                newUsers.set(updatedUser.id, updatedUser);
-
-                return {
-                    currentUser: updatedUser,
-                    users: newUsers,
-                };
+                getErrorMessage(error) || "Failed to update profile";
+            set({
+                isLoading: false,
+                error: errorMessage,
             });
-        } catch (error) {
-            console.error("Failed to update online status:", error);
+            throw error;
         }
     },
 
+    uploadAvatar: async (file) => {
+        set({ isLoading: true, error: null });
+        try {
+            const formData = new FormData();
+            formData.append("avatar_file", file);
+
+            const response = await userService.updateProfile(formData);
+            const updatedUser =
+                response.data?.data?.user ||
+                response.data?.data ||
+                response.data?.user ||
+                response.data;
+
+            if (!updatedUser || !updatedUser.id) {
+                throw new Error("Invalid user data in response");
+            }
+
+            set({
+                currentUser: updatedUser,
+                isLoading: false,
+                error: null,
+            });
+
+            return updatedUser;
+        } catch (error) {
+            const errorMessage =
+                getErrorMessage(error) || "Failed to upload avatar";
+            set({
+                isLoading: false,
+                error: errorMessage,
+            });
+            throw error;
+        }
+    },
+
+    clearSearch: () => set({ searchedUsers: [] }),
+    clearError: () => set({ error: null }),
+    getUserById: (userId) => {
+        const state = get();
+        return state.users.find((user) => user && user.id === userId);
+    },
+    isUserOnline: (userId) => get().onlineUsers.has(userId),
     setUserOnline: (userId) => {
         set((state) => {
             const newOnlineUsers = new Set(state.onlineUsers);
@@ -151,22 +176,11 @@ export const useUserStore = create((set, get) => ({
             return { onlineUsers: newOnlineUsers };
         });
     },
-
     setUserOffline: (userId) => {
         set((state) => {
             const newOnlineUsers = new Set(state.onlineUsers);
             newOnlineUsers.delete(userId);
             return { onlineUsers: newOnlineUsers };
         });
-    },
-
-    clearSearch: () => set({ searchedUsers: [] }),
-    clearError: () => set({ error: null }),
-
-    getUserById: (userId) => get().users.get(userId),
-    isUserOnline: (userId) => get().onlineUsers.has(userId),
-    getUserDisplayName: (userId) => {
-        const user = get().users.get(userId);
-        return user ? truncateText(user.full_name, 20) : "Unknown User";
     },
 }));

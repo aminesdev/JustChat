@@ -13,12 +13,24 @@ export const useAuthStore = create(
             isAuthenticated: false,
             isLoading: false,
             error: null,
+            isInitialized: false,
 
             // Initialize auth state from localStorage
             initialize: async () => {
+                // If already initialized, return early
+                if (get().isInitialized) {
+                    return;
+                }
+
                 const accessToken = localStorage.getItem("accessToken");
                 const refreshToken = localStorage.getItem("refreshToken");
                 const userStr = localStorage.getItem("user");
+
+                console.log("Auth initialization:", {
+                    accessToken: !!accessToken,
+                    refreshToken: !!refreshToken,
+                    userStr: !!userStr,
+                });
 
                 if (accessToken && refreshToken && userStr) {
                     try {
@@ -28,14 +40,33 @@ export const useAuthStore = create(
                             refreshToken,
                             user,
                             isAuthenticated: true,
+                            isInitialized: true,
                         });
+                        console.log("Auth initialized successfully");
                     } catch (error) {
                         console.error(
                             "Failed to parse stored user data:",
                             error
                         );
-                        get().logout();
+                        // Clear invalid data
+                        localStorage.removeItem("accessToken");
+                        localStorage.removeItem("refreshToken");
+                        localStorage.removeItem("user");
+                        set({
+                            isInitialized: true,
+                            isAuthenticated: false,
+                        });
                     }
+                } else {
+                    // No valid tokens found, ensure clean state
+                    console.log("No valid tokens found, clearing auth state");
+                    set({
+                        isInitialized: true,
+                        isAuthenticated: false,
+                        user: null,
+                        accessToken: null,
+                        refreshToken: null,
+                    });
                 }
             },
 
@@ -58,6 +89,7 @@ export const useAuthStore = create(
                         isAuthenticated: true,
                         isLoading: false,
                         error: null,
+                        isInitialized: true,
                     });
 
                     return response;
@@ -88,6 +120,7 @@ export const useAuthStore = create(
                         isAuthenticated: true,
                         isLoading: false,
                         error: null,
+                        isInitialized: true,
                     });
 
                     return response;
@@ -122,6 +155,7 @@ export const useAuthStore = create(
                         isAuthenticated: false,
                         isLoading: false,
                         error: null,
+                        isInitialized: true,
                     });
                 }
             },
@@ -165,6 +199,7 @@ export const useAuthStore = create(
                 accessToken: state.accessToken,
                 refreshToken: state.refreshToken,
                 isAuthenticated: state.isAuthenticated,
+                isInitialized: state.isInitialized,
             }),
         }
     )

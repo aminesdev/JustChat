@@ -49,7 +49,7 @@
 
 ## File: App.jsx
 ```jsx
-import {useEffect} from 'react';
+import {useEffect, useState} from 'react';
 import {BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom';
 import Login from './pages/Auth/Login';
 import Signup from './pages/Auth/Signup';
@@ -63,16 +63,34 @@ import {useUIStore} from './stores/uiStore';
 function App() {
     const {isAuthenticated, initialize} = useAuthStore();
     const {theme} = useUIStore();
+    const [isInitialized, setIsInitialized] = useState(false);
 
-    // Initialize auth and theme on app load
+    // Initialize auth and theme on app load - RUN ONLY ONCE
     useEffect(() => {
-        initialize();
-    }, [initialize]);
+        const initApp = async () => {
+            await initialize();
+            setIsInitialized(true);
+        };
+
+        initApp();
+    }, []); // Empty dependency array
 
     // Apply theme class to html element
     useEffect(() => {
         document.documentElement.classList.toggle('dark', theme === 'dark');
     }, [theme]);
+
+    // Show loading until initialization is complete
+    if (!isInitialized) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <p className="text-muted-foreground">Loading...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <Router>
@@ -117,6 +135,195 @@ function App() {
 }
 
 export default App;
+```
+
+## File: components/chat/ConversationList.jsx
+```jsx
+import {useEffect, useState} from 'react';
+import {useConversationStore} from '@/stores/conversationStore';
+import {useAuthStore} from '@/stores/authStore';
+import {Button} from '@/components/ui/button';
+import {Input} from '@/components/ui/input';
+import {Search, MessageSquare, Users} from 'lucide-react';
+
+const ConversationList = () => {
+    const {conversationsList, setCurrentConversation, currentConversationId, hasLoadedConversations, loadConversations} = useConversationStore();
+    const {user, isAuthenticated} = useAuthStore();
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        // Only load if authenticated and not already loaded
+        if (!isAuthenticated) {
+            setIsLoading(false);
+            return;
+        }
+
+        if (hasLoadedConversations) {
+            setIsLoading(false);
+            return;
+        }
+
+        const initializeConversations = async () => {
+            setIsLoading(true);
+            try {
+                await loadConversations();
+            } catch (error) {
+                console.error('Failed to load conversations:', error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        initializeConversations();
+    }, [hasLoadedConversations, isAuthenticated, loadConversations]);
+
+    const filteredConversations = conversationsList.filter(conversation => {
+        const otherUser = conversation.user1.id === user?.id ? conversation.user2 : conversation.user1;
+        return otherUser.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            otherUser.email.toLowerCase().includes(searchQuery.toLowerCase());
+    });
+
+    const getOtherUser = (conversation) => {
+        return conversation.user1.id === user?.id ? conversation.user2 : conversation.user1;
+    };
+
+    const getLastMessagePreview = (conversation) => {
+        if (!conversation.last_message) return 'No messages yet';
+
+        const isCurrentUser = conversation.last_message.sender_id === user?.id;
+        const prefix = isCurrentUser ? 'You: ' : '';
+
+        if (conversation.last_message.message_type === 'IMAGE') {
+            return `${prefix}📷 Image`;
+        }
+
+        const text = conversation.last_message.message_text || 'Message';
+        return `${prefix}${text.length > 30 ? text.substring(0, 30) + '...' : text}`;
+    };
+
+    const formatTime = (timestamp) => {
+        if (!timestamp) return '';
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diffInHours = (now - date) / (1000 * 60 * 60);
+
+        if (diffInHours < 24) {
+            return date.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
+        } else {
+            return date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+        }
+    };
+
+    if (isLoading) {
+        return (
+            <div className="flex-1 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex-1 flex flex-col border-r border-border">
+            {/* Header */}
+            <div className="p-4 border-b border-border">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold">Messages</h2>
+                    <Button variant="ghost" size="icon">
+                        <Users className="h-4 w-4" />
+                    </Button>
+                </div>
+
+                {/* Search */}
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Search conversations..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10"
+                    />
+                </div>
+            </div>
+
+            {/* Conversations List */}
+            <div className="flex-1 overflow-y-auto">
+                {filteredConversations.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
+                        <MessageSquare className="h-12 w-12 mb-4 opacity-50" />
+                        <p className="text-center mb-2">
+                            {searchQuery ? 'No conversations found' : 'No conversations yet'}
+                        </p>
+                        <p className="text-sm text-center">
+                            {searchQuery ? 'Try a different search term' : 'Start a new chat to begin messaging'}
+                        </p>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-border">
+                        {filteredConversations.map((conversation) => {
+                            const otherUser = getOtherUser(conversation);
+                            const isActive = conversation.id === currentConversationId;
+
+                            return (
+                                <div
+                                    key={conversation.id}
+                                    className={`p-4 cursor-pointer transition-colors ${isActive
+                                        ? 'bg-accent'
+                                        : 'hover:bg-accent/50'
+                                        }`}
+                                    onClick={() => setCurrentConversation(conversation.id)}
+                                >
+                                    <div className="flex items-start gap-3">
+                                        <div className="relative">
+                                            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                                                <span className="text-sm font-medium text-primary">
+                                                    {otherUser.full_name.charAt(0).toUpperCase()}
+                                                </span>
+                                            </div>
+                                            {otherUser.is_online && (
+                                                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background"></div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-start justify-between mb-1">
+                                                <p className="font-medium text-sm truncate">
+                                                    {otherUser.full_name}
+                                                </p>
+                                                {conversation.last_message && (
+                                                    <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                                                        {formatTime(conversation.last_message.created_at)}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <p className="text-sm text-muted-foreground truncate">
+                                                {getLastMessagePreview(conversation)}
+                                            </p>
+
+                                            {conversation._count?.messages > 0 && (
+                                                <div className="flex items-center justify-between mt-1">
+                                                    <div className="flex-1" />
+                                                    {conversation._count.messages > 0 && (
+                                                        <div className="bg-primary text-primary-foreground text-xs rounded-full px-2 py-1 min-w-5 h-5 flex items-center justify-center">
+                                                            {conversation._count.messages > 99 ? '99+' : conversation._count.messages}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default ConversationList;
 ```
 
 ## File: components/layout/Layout.jsx
@@ -205,23 +412,238 @@ export default ProtectedRoute;
 ```jsx
 import {useConversationStore} from '@/stores/conversationStore';
 import {useAuthStore} from '@/stores/authStore';
+import {useUserStore} from '@/stores/userStore';
 import {Button} from '@/components/ui/button';
-import {X, MessageSquare, Plus, User, Settings} from 'lucide-react';
+import {X, MessageSquare, Users, Search, Loader2} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
+import {useState, useEffect} from 'react';
 
 const Sidebar = ({isOpen, onClose}) => {
-    const {conversationsList, loadConversations, setCurrentConversation} = useConversationStore();
+    const {
+        conversationsList,
+        setCurrentConversation,
+        getOrCreateConversation,
+        currentConversationId,
+        hasLoadedConversations
+    } = useConversationStore();
     const {user} = useAuthStore();
+    const {getAllUsers, searchedUsers, searchUsers, clearSearch, users, isLoading: usersLoading} = useUserStore();
     const navigate = useNavigate();
+    const [activeView, setActiveView] = useState('conversations');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [conversationsLoading, setConversationsLoading] = useState(false);
+    const [actionLoading, setActionLoading] = useState(false);
+
+    // Load conversations when view changes to conversations
+    useEffect(() => {
+        if (activeView === 'conversations' && !hasLoadedConversations) {
+            const loadConversationsList = async () => {
+                setConversationsLoading(true);
+                try {
+                    await useConversationStore.getState().loadConversations();
+                } catch (error) {
+                    console.error('Failed to load conversations:', error);
+                } finally {
+                    setConversationsLoading(false);
+                }
+            };
+            loadConversationsList();
+        }
+    }, [activeView, hasLoadedConversations]);
+
+    // Load users when view changes to users
+    useEffect(() => {
+        if (activeView === 'users' && users.length === 0) {
+            getAllUsers();
+        }
+    }, [activeView, users.length, getAllUsers]);
+
+    const handleViewChange = (view) => {
+        setActiveView(view);
+        setSearchQuery('');
+        clearSearch();
+    };
 
     const handleProfileClick = () => {
         navigate('/profile');
         onClose();
     };
 
+    const handleUserClick = async (selectedUser) => {
+        if (selectedUser.id === user?.id) return;
+
+        setActionLoading(true);
+        try {
+            const conversation = await getOrCreateConversation(selectedUser.id);
+            setCurrentConversation(conversation.id);
+            setActiveView('conversations');
+            setSearchQuery('');
+            clearSearch();
+            onClose();
+        } catch (error) {
+            console.error('Failed to create conversation:', error);
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleConversationClick = (conversation) => {
+        setCurrentConversation(conversation.id);
+        onClose();
+    };
+
+    const handleSearch = (e) => {
+        const query = e.target.value;
+        setSearchQuery(query);
+        if (query.trim()) {
+            searchUsers(query, 20);
+        } else {
+            clearSearch();
+        }
+    };
+
+    const getOtherUser = (conversation) => {
+        if (!conversation.user1 || !conversation.user2) return null;
+        return conversation.user1.id === user?.id ? conversation.user2 : conversation.user1;
+    };
+
+    const getLastMessagePreview = (conversation) => {
+        if (!conversation.last_message) return 'No messages yet';
+
+        const isCurrentUser = conversation.last_message.sender_id === user?.id;
+        const prefix = isCurrentUser ? 'You: ' : '';
+
+        if (conversation.last_message.message_type === 'IMAGE') {
+            return `${prefix}📷 Image`;
+        }
+
+        const text = conversation.last_message.message_text || 'Message';
+        return `${prefix}${text.length > 30 ? text.substring(0, 30) + '...' : text}`;
+    };
+
+    const displayUsers = searchQuery ? searchedUsers : users;
+
+    const renderContent = () => {
+        if (activeView === 'conversations') {
+            if (conversationsLoading) {
+                return (
+                    <div className="flex items-center justify-center h-32">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                );
+            }
+
+            return (
+                <div className="divide-y divide-border">
+                    {conversationsList.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-32 text-muted-foreground p-4">
+                            <MessageSquare className="h-8 w-8 mb-2 opacity-50" />
+                            <p className="text-sm text-center">No conversations yet</p>
+                            <p className="text-xs text-center mt-1">Start a chat with another user</p>
+                        </div>
+                    ) : (
+                        conversationsList.map((conversation) => {
+                            const otherUser = getOtherUser(conversation);
+                            if (!otherUser) return null;
+
+                            return (
+                                <div
+                                    key={conversation.id}
+                                    className={`p-4 cursor-pointer transition-colors ${conversation.id === currentConversationId
+                                        ? 'bg-accent'
+                                        : 'hover:bg-accent/50'
+                                        }`}
+                                    onClick={() => handleConversationClick(conversation)}
+                                >
+                                    <div className="flex items-start gap-3">
+                                        <div className="relative">
+                                            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                                                <span className="text-sm font-medium text-primary">
+                                                    {otherUser.full_name.charAt(0).toUpperCase()}
+                                                </span>
+                                            </div>
+                                            {otherUser.is_online && (
+                                                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background"></div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <p className="font-medium text-sm truncate">
+                                                    {otherUser.full_name}
+                                                </p>
+                                            </div>
+
+                                            <p className="text-sm text-muted-foreground truncate">
+                                                {getLastMessagePreview(conversation)}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            );
+        } else {
+            if (usersLoading && displayUsers.length === 0) {
+                return (
+                    <div className="flex items-center justify-center h-32">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                );
+            }
+
+            return (
+                <div className="divide-y divide-border">
+                    {displayUsers.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-32 text-muted-foreground p-4">
+                            <Users className="h-8 w-8 mb-2 opacity-50" />
+                            <p className="text-sm text-center">
+                                {searchQuery ? 'No users found' : 'No users available'}
+                            </p>
+                        </div>
+                    ) : (
+                        displayUsers.map((userItem) => (
+                            <div
+                                key={userItem.id}
+                                className="p-4 cursor-pointer hover:bg-accent transition-colors"
+                                onClick={() => handleUserClick(userItem)}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="relative">
+                                        <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
+                                            <span className="text-sm font-medium text-primary">
+                                                {userItem.full_name.charAt(0).toUpperCase()}
+                                            </span>
+                                        </div>
+                                        {userItem.is_online && (
+                                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background"></div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-sm truncate">
+                                            {userItem.full_name}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground truncate">
+                                            {userItem.email}
+                                        </p>
+                                    </div>
+                                    {actionLoading && (
+                                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                    )}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            );
+        }
+    };
+
     return (
         <>
-            {/* Mobile overlay */}
             {isOpen && (
                 <div
                     className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
@@ -229,67 +651,55 @@ const Sidebar = ({isOpen, onClose}) => {
                 />
             )}
 
-            {/* Sidebar */}
             <div className={`
                 fixed inset-y-0 left-0 z-50 w-80 bg-card border-r border-border transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto
                 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
             `}>
                 <div className="flex flex-col h-full">
-                    {/* Header */}
                     <div className="flex items-center justify-between p-4 border-b border-border">
-                        <h2 className="text-lg font-semibold">Conversations</h2>
-                        <div className="flex items-center gap-2">
-                            <Button variant="ghost" size="icon" className="lg:hidden">
-                                <Plus className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden">
-                                <X className="h-4 w-4" />
-                            </Button>
+                        <h2 className="text-lg font-semibold">
+                            {activeView === 'conversations' ? 'Messages' : 'All Users'}
+                        </h2>
+                        <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden">
+                            <X className="h-4 w-4" />
+                        </Button>
+                    </div>
+
+                    <div className="flex border-b border-border">
+                        <Button
+                            variant={activeView === 'conversations' ? 'secondary' : 'ghost'}
+                            className="flex-1 rounded-none"
+                            onClick={() => handleViewChange('conversations')}
+                        >
+                            <MessageSquare className="h-4 w-4 mr-2" />
+                            Messages
+                        </Button>
+                        <Button
+                            variant={activeView === 'users' ? 'secondary' : 'ghost'}
+                            className="flex-1 rounded-none"
+                            onClick={() => handleViewChange('users')}
+                        >
+                            <Users className="h-4 w-4 mr-2" />
+                            Users
+                        </Button>
+                    </div>
+
+                    <div className="p-4 border-b border-border">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <input
+                                placeholder={activeView === 'conversations' ? "Search conversations..." : "Search users..."}
+                                value={searchQuery}
+                                onChange={handleSearch}
+                                className="w-full pl-10 pr-4 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                            />
                         </div>
                     </div>
 
-                    {/* Conversations List */}
-                    <div className="flex-1 overflow-y-auto p-4">
-                        {conversationsList.length === 0 ? (
-                            <div className="text-center text-muted-foreground py-8">
-                                <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                                <p>No conversations yet</p>
-                                <p className="text-sm">Start a new chat to begin messaging</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                {conversationsList.map((conversation) => (
-                                    <div
-                                        key={conversation.id}
-                                        className="p-3 rounded-lg hover:bg-accent cursor-pointer transition-colors"
-                                        onClick={() => {
-                                            setCurrentConversation(conversation.id);
-                                            onClose();
-                                        }}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                                                <MessageSquare className="h-5 w-5 text-primary" />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="font-medium text-sm truncate">
-                                                    {conversation.user1.id === user?.id
-                                                        ? conversation.user2.full_name
-                                                        : conversation.user1.full_name
-                                                    }
-                                                </p>
-                                                <p className="text-xs text-muted-foreground truncate">
-                                                    {conversation.last_message?.message_text || 'No messages yet'}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                    <div className="flex-1 overflow-y-auto">
+                        {renderContent()}
                     </div>
 
-                    {/* User Profile Button */}
                     <div className="p-4 border-t border-border">
                         <Button
                             variant="ghost"
@@ -306,7 +716,6 @@ const Sidebar = ({isOpen, onClose}) => {
                                     <p className="text-sm font-medium truncate">{user?.full_name}</p>
                                     <p className="text-xs text-muted-foreground truncate">View profile</p>
                                 </div>
-                                <Settings className="h-4 w-4 text-muted-foreground" />
                             </div>
                         </Button>
                     </div>
@@ -609,6 +1018,189 @@ Label.displayName = LabelPrimitive.Root.displayName
 
 export { Label }
 
+```
+
+## File: components/ui/skeleton/AuthSkeleton.jsx
+```jsx
+import {Skeleton} from "@/components/ui/skeleton";
+import {Card, CardContent, CardHeader} from "@/components/ui/card";
+
+const AuthSkeleton = () => {
+    return (
+        <div className="min-h-screen flex flex-col lg:flex-row">
+            <div className="flex-1 flex items-center justify-center p-8 bg-background order-2 lg:order-1">
+                <div className="w-full max-w-md space-y-8">
+                    <div className="text-center space-y-2">
+                        <Skeleton className="h-8 w-32 mx-auto" />
+                        <Skeleton className="h-4 w-48 mx-auto" />
+                    </div>
+                    <Card>
+                        <CardHeader className="space-y-1">
+                            <Skeleton className="h-6 w-40 mx-auto" />
+                            <Skeleton className="h-4 w-56 mx-auto" />
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <Skeleton className="h-10 w-full" />
+                            <div className="relative">
+                                <div className="absolute inset-0 flex items-center">
+                                    <Skeleton className="w-full" />
+                                </div>
+                                <div className="relative flex justify-center">
+                                    <Skeleton className="h-4 w-32 bg-background px-2" />
+                                </div>
+                            </div>
+                            <div className="space-y-3">
+                                <Skeleton className="h-10 w-full" />
+                                <Skeleton className="h-10 w-full" />
+                            </div>
+                            <Skeleton className="h-10 w-full" />
+                            <Skeleton className="h-4 w-48 mx-auto" />
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+            <div className="flex-1 bg-muted flex items-center justify-center p-8 order-1 lg:order-2">
+                <Skeleton className="w-full h-64 rounded-lg" />
+            </div>
+        </div>
+    );
+};
+
+export default AuthSkeleton;
+```
+
+## File: components/ui/skeleton/ChatSkeleton.jsx
+```jsx
+import {Skeleton} from "@/components/ui/skeleton";
+
+const ChatSkeleton = () => {
+    return (
+        <div className="flex h-screen bg-background">
+            <div className="w-80 border-r border-border p-4">
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <Skeleton className="h-6 w-32" />
+                        <Skeleton className="h-8 w-8 rounded-full" />
+                    </div>
+                    <Skeleton className="h-10 w-full" />
+                    <div className="space-y-3 mt-6">
+                        {Array.from({length: 5}).map((_, i) => (
+                            <div key={i} className="flex items-center space-x-3">
+                                <Skeleton className="h-12 w-12 rounded-full" />
+                                <div className="space-y-2 flex-1">
+                                    <Skeleton className="h-4 w-3/4" />
+                                    <Skeleton className="h-3 w-1/2" />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+            <div className="flex-1 flex flex-col">
+                <div className="border-b border-border p-4">
+                    <div className="flex items-center space-x-3">
+                        <Skeleton className="h-10 w-10 rounded-full" />
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-24" />
+                            <Skeleton className="h-3 w-16" />
+                        </div>
+                    </div>
+                </div>
+                <div className="flex-1 p-4 space-y-4">
+                    {Array.from({length: 8}).map((_, i) => (
+                        <div key={i} className={`flex ${i % 2 === 0 ? 'justify-start' : 'justify-end'}`}>
+                            <Skeleton className="h-20 w-48 rounded-lg" />
+                        </div>
+                    ))}
+                </div>
+                <div className="border-t border-border p-4">
+                    <Skeleton className="h-10 w-full" />
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default ChatSkeleton;
+```
+
+## File: components/ui/skeleton/ProfileSkeleton.jsx
+```jsx
+import {Skeleton} from "@/components/ui/skeleton";
+import {Card, CardContent, CardHeader} from "@/components/ui/card";
+
+const ProfileSkeleton = () => {
+    return (
+        <div className="container max-w-4xl mx-auto p-6 space-y-6">
+            <div>
+                <Skeleton className="h-8 w-48 mb-2" />
+                <Skeleton className="h-4 w-64" />
+            </div>
+            <div className="grid gap-6 lg:grid-cols-3">
+                <Card className="lg:col-span-1">
+                    <CardHeader>
+                        <Skeleton className="h-6 w-32" />
+                        <Skeleton className="h-4 w-48" />
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <Skeleton className="h-32 w-32 rounded-full mx-auto" />
+                        <Skeleton className="h-10 w-full" />
+                    </CardContent>
+                </Card>
+                <Card className="lg:col-span-2">
+                    <CardHeader>
+                        <Skeleton className="h-6 w-40" />
+                        <Skeleton className="h-4 w-56" />
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-20" />
+                            <Skeleton className="h-10 w-full" />
+                        </div>
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-20" />
+                            <Skeleton className="h-10 w-full" />
+                        </div>
+                        <div className="flex gap-2 pt-4">
+                            <Skeleton className="h-10 w-32" />
+                            <Skeleton className="h-10 w-24" />
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+            <Card>
+                <CardHeader>
+                    <Skeleton className="h-6 w-40" />
+                    <Skeleton className="h-4 w-56" />
+                </CardHeader>
+                <CardContent>
+                    <Skeleton className="h-10 w-48" />
+                </CardContent>
+            </Card>
+        </div>
+    );
+};
+
+export default ProfileSkeleton;
+```
+
+## File: components/ui/skeleton.jsx
+```jsx
+import {cn} from "@/lib/utils";
+
+function Skeleton({
+    className,
+    ...props
+}) {
+    return (
+        <div
+            className={cn("animate-pulse rounded-md bg-muted", className)}
+            {...props}
+        />
+    );
+}
+
+export {Skeleton};
 ```
 
 ## File: components/ui/theme-toggle.jsx
@@ -1227,16 +1819,114 @@ export default Signup;
 
 ## File: pages/Chat/Chat.jsx
 ```jsx
+import {useEffect, useState} from 'react';
 import Layout from '@/components/layout/Layout';
+import ChatSkeleton from '@/components/ui/skeleton/ChatSkeleton';
+import {useConversationStore} from '@/stores/conversationStore';
+import {useAuthStore} from '@/stores/authStore';
+import {Card, CardContent} from '@/components/ui/card';
+import {MessageSquare} from 'lucide-react';
 
 const Chat = () => {
+    const {currentConversationId, getCurrentConversation, hasLoadedConversations, loadConversations} = useConversationStore();
+    const {user, isAuthenticated} = useAuthStore();
+    const [isLoading, setIsLoading] = useState(true);
+    const currentConversation = getCurrentConversation();
+
+    useEffect(() => {
+        // Only load if authenticated and not already loaded
+        if (!isAuthenticated) {
+            setIsLoading(false);
+            return;
+        }
+
+        if (hasLoadedConversations) {
+            setIsLoading(false);
+            return;
+        }
+
+        const initializeChat = async () => {
+            try {
+                await loadConversations();
+            } catch (error) {
+                console.error('Failed to load conversations:', error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        initializeChat();
+    }, [hasLoadedConversations, isAuthenticated, loadConversations]);
+
+    // Get the other user in the conversation
+    const getOtherUser = () => {
+        if (!currentConversation || !user) return null;
+        return currentConversation.user1.id === user.id
+            ? currentConversation.user2
+            : currentConversation.user1;
+    };
+
+    const otherUser = getOtherUser();
+
+    if (isLoading) {
+        return <ChatSkeleton />;
+    }
+
     return (
         <Layout>
-            <div className="flex items-center justify-center h-full text-muted-foreground">
-                <div className="text-center">
-                    <h2 className="text-2xl font-bold mb-2">Welcome to JustChat</h2>
-                    <p>Select a conversation to start chatting</p>
-                </div>
+            <div className="flex h-full">
+                {currentConversationId ? (
+                    <div className="flex-1 flex flex-col">
+                        {/* Chat Header */}
+                        <div className="border-b border-border p-4">
+                            <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                                    <span className="text-sm font-medium text-primary">
+                                        {otherUser?.full_name?.charAt(0).toUpperCase() || '?'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold">
+                                        {otherUser?.full_name || 'Unknown User'}
+                                    </h3>
+                                    <p className="text-sm text-muted-foreground">
+                                        {otherUser?.is_online ? 'Online' : 'Offline'}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Messages Area - Coming Soon */}
+                        <div className="flex-1 flex items-center justify-center">
+                            <Card className="w-full max-w-md mx-4">
+                                <CardContent className="p-6 text-center">
+                                    <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                                    <h3 className="text-lg font-semibold mb-2">Chat Interface</h3>
+                                    <p className="text-muted-foreground">
+                                        Message display and real-time chat coming soon...
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex-1 flex items-center justify-center">
+                        <Card className="w-full max-w-md mx-4">
+                            <CardContent className="p-6 text-center">
+                                <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                                <h3 className="text-lg font-semibold mb-2">Welcome to JustChat</h3>
+                                <p className="text-muted-foreground mb-4">
+                                    Select a conversation or start a new chat with another user
+                                </p>
+                                <div className="text-sm text-muted-foreground">
+                                    <p>• Click "Users" to browse all app users</p>
+                                    <p>• Click on a user to start a conversation</p>
+                                    <p>• Use "Messages" to view your existing chats</p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
             </div>
         </Layout>
     );
@@ -1247,6 +1937,7 @@ export default Chat;
 
 ## File: pages/Profile/Profile.jsx
 ```jsx
+import {useEffect, useState} from 'react';
 import Layout from '@/components/layout/Layout';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -1254,12 +1945,14 @@ import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {useAuthStore} from '@/stores/authStore';
 import {useUserStore} from '@/stores/userStore';
-import {useState} from 'react';
 import {User, Mail, Camera, Save, X, Key, Upload} from 'lucide-react';
+import ProfileSkeleton from "@/components/ui/skeleton/ProfileSkeleton";
+import {useNavigate} from 'react-router-dom';
 
 const Profile = () => {
-    const {user} = useAuthStore();
+    const {user, isAuthenticated, updateUser} = useAuthStore();
     const {updateProfile, isLoading, error, clearError} = useUserStore();
+    const navigate = useNavigate();
     const [isEditing, setIsEditing] = useState(false);
     const [isChangingPassword, setIsChangingPassword] = useState(false);
     const [formData, setFormData] = useState({
@@ -1273,6 +1966,50 @@ const Profile = () => {
     const [avatarFile, setAvatarFile] = useState(null);
     const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || '');
     const [success, setSuccess] = useState('');
+    const [pageLoading, setPageLoading] = useState(true);
+    const [hasLoadedProfile, setHasLoadedProfile] = useState(false);
+
+    useEffect(() => {
+        if (!isAuthenticated) {
+            navigate('/login');
+            return;
+        }
+
+        if (!hasLoadedProfile && user) {
+            const initializeProfile = async () => {
+                try {
+                    const accessToken = localStorage.getItem("accessToken");
+                    const refreshToken = localStorage.getItem("refreshToken");
+
+                    if (!accessToken || !refreshToken) {
+                        setPageLoading(false);
+                        setHasLoadedProfile(true);
+                        return;
+                    }
+
+                    const userStore = useUserStore.getState();
+                    if (!userStore.currentUser) {
+                        await userStore.loadCurrentUser();
+                    }
+                } catch (error) {
+                } finally {
+                    setPageLoading(false);
+                    setHasLoadedProfile(true);
+                }
+            };
+
+            initializeProfile();
+        } else {
+            setPageLoading(false);
+        }
+    }, [user, hasLoadedProfile, isAuthenticated, navigate]);
+
+    // Reset avatar preview when user changes
+    useEffect(() => {
+        if (user?.avatar_url) {
+            setAvatarPreview(getAvatarUrl(user.avatar_url));
+        }
+    }, [user]);
 
     const handleSave = async () => {
         clearError();
@@ -1288,24 +2025,69 @@ const Profile = () => {
             updateData.append('avatar_file', avatarFile);
         }
 
-        try {
-            await updateProfile(updateData);
-            setSuccess('Profile updated successfully');
+        if (updateData.get('full_name') === null && updateData.get('avatar_file') === null) {
+            setSuccess('No changes to save');
             setIsEditing(false);
-            setAvatarFile(null);
-        } catch (error) {
-            console.error('Profile update failed:', error);
+            return;
         }
+
+        try {
+            const updatedUser = await updateProfile(updateData);
+
+            if (updatedUser && updatedUser.id) {
+                setSuccess('Profile updated successfully');
+                setIsEditing(false);
+                setAvatarFile(null);
+
+                // Force refresh user data from server
+                const userStore = useUserStore.getState();
+                await userStore.loadCurrentUser();
+                const freshUser = userStore.currentUser;
+
+                if (freshUser) {
+                    updateUser(freshUser);
+                    if (freshUser.avatar_url) {
+                        setAvatarPreview(getAvatarUrl(freshUser.avatar_url));
+                    }
+                }
+            }
+        } catch (error) {
+        }
+    };
+
+    const handleAvatarChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            useUserStore.setState({error: 'Please select a valid image file'});
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+            useUserStore.setState({error: 'Image must be smaller than 5MB'});
+            return;
+        }
+
+        setAvatarFile(file);
+        clearError();
+
+        // Create preview
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            setAvatarPreview(e.target.result);
+        };
+        reader.readAsDataURL(file);
     };
 
     const handlePasswordChange = async () => {
         if (passwordData.newPassword !== passwordData.confirmPassword) {
-            clearError();
+            useUserStore.setState({error: 'Passwords do not match'});
             return;
         }
 
         if (passwordData.newPassword.length < 6) {
-            clearError();
+            useUserStore.setState({error: 'Password must be at least 6 characters long'});
             return;
         }
 
@@ -1326,30 +2108,7 @@ const Profile = () => {
             });
             setIsChangingPassword(false);
         } catch (error) {
-            console.error('Password update failed:', error);
         }
-    };
-
-    const handleAvatarChange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        if (!file.type.startsWith('image/')) {
-            return;
-        }
-
-        if (file.size > 5 * 1024 * 1024) {
-            return;
-        }
-
-        setAvatarFile(file);
-        clearError();
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            setAvatarPreview(e.target.result);
-        };
-        reader.readAsDataURL(file);
     };
 
     const handleCancel = () => {
@@ -1357,7 +2116,7 @@ const Profile = () => {
             full_name: user?.full_name || '',
         });
         setAvatarFile(null);
-        setAvatarPreview(user?.avatar_url || '');
+        setAvatarPreview(user?.avatar_url ? getAvatarUrl(user.avatar_url) : '');
         clearError();
         setSuccess('');
         setIsEditing(false);
@@ -1369,6 +2128,50 @@ const Profile = () => {
     };
 
     const passwordsMatch = passwordData.newPassword === passwordData.confirmPassword || !passwordData.confirmPassword;
+
+    const getAvatarUrl = (url) => {
+        if (!url) return null;
+
+        console.log('Original avatar URL:', url);
+
+        // If it's already a full URL, return as is
+        if (url.startsWith('http')) return url;
+
+        // If it starts with /, it's a relative path to the backend
+        if (url.startsWith('/')) {
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+            const fullUrl = `${apiUrl}${url}`;
+            console.log('Constructed avatar URL:', fullUrl);
+            return fullUrl;
+        }
+
+        // If it's just a filename, assume it's in uploads directory
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+        const fullUrl = `${apiUrl}/uploads/${url}`;
+        console.log('Constructed avatar URL from filename:', fullUrl);
+        return fullUrl;
+    };
+
+    const handleEditClick = () => {
+        setIsEditing(true);
+        setFormData({
+            full_name: user?.full_name || '',
+        });
+        setAvatarPreview(user?.avatar_url ? getAvatarUrl(user.avatar_url) : '');
+        setAvatarFile(null);
+    };
+
+    if (pageLoading) {
+        return (
+            <Layout>
+                <ProfileSkeleton />
+            </Layout>
+        );
+    }
+
+    if (!isAuthenticated) {
+        return null;
+    }
 
     return (
         <Layout>
@@ -1397,7 +2200,7 @@ const Profile = () => {
                             <CardHeader>
                                 <CardTitle>Profile Picture</CardTitle>
                                 <CardDescription>
-                                    Update your profile photo
+                                    {isEditing ? 'Select a new profile photo' : 'Your profile photo'}
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
@@ -1409,24 +2212,27 @@ const Profile = () => {
                                                     src={avatarPreview}
                                                     alt="Profile"
                                                     className="w-32 h-32 rounded-full object-cover"
+                                                    onError={(e) => {
+                                                        console.error('Failed to load avatar image:', avatarPreview);
+                                                        e.target.style.display = 'none';
+                                                        const nextSibling = e.target.nextSibling;
+                                                        if (nextSibling && nextSibling.style) {
+                                                            nextSibling.style.display = 'flex';
+                                                        }
+                                                    }}
                                                 />
-                                            ) : user?.avatar_url ? (
-                                                <img
-                                                    src={user.avatar_url}
-                                                    alt="Profile"
-                                                    className="w-32 h-32 rounded-full object-cover"
-                                                />
-                                            ) : (
+                                            ) : null}
+                                            {(!avatarPreview) && (
                                                 <User className="h-16 w-16 text-primary" />
                                             )}
                                         </div>
                                         {isEditing && (
-                                            <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full p-2 cursor-pointer hover:bg-primary/90">
+                                            <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full p-2 cursor-pointer hover:bg-primary/90 transition-colors">
                                                 <Camera className="h-4 w-4" />
                                                 <input
                                                     id="avatar-upload"
                                                     type="file"
-                                                    accept="image/*"
+                                                    accept="image/jpeg,image/png,image/webp,image/gif"
                                                     onChange={handleAvatarChange}
                                                     className="hidden"
                                                     disabled={isLoading}
@@ -1435,16 +2241,27 @@ const Profile = () => {
                                         )}
                                     </div>
                                     {isEditing ? (
-                                        <label htmlFor="avatar-upload" className="w-full">
-                                            <Button variant="outline" className="w-full" disabled={isLoading}>
-                                                <Upload className="h-4 w-4 mr-2" />
-                                                Change Photo
-                                            </Button>
-                                        </label>
+                                        <div className="text-center">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                                {avatarFile ? 'New photo selected' : 'Click the camera icon to choose a photo'}
+                                            </p>
+                                            {avatarFile && (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Click "Save Changes" to update your profile
+                                                </p>
+                                            )}
+                                        </div>
                                     ) : (
-                                        <p className="text-sm text-muted-foreground text-center">
-                                            Click Edit Profile to change your photo
-                                        </p>
+                                        <div className="text-center">
+                                            <p className="text-sm text-muted-foreground">
+                                                Click "Edit Profile" to change your photo
+                                            </p>
+                                            {user?.avatar_url && (
+                                                <p className="text-xs text-muted-foreground mt-1">
+                                                    Current avatar URL: {user.avatar_url}
+                                                </p>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             </CardContent>
@@ -1505,7 +2322,7 @@ const Profile = () => {
                                             </Button>
                                         </>
                                     ) : (
-                                        <Button onClick={() => setIsEditing(true)}>
+                                        <Button onClick={handleEditClick}>
                                             Edit Profile
                                         </Button>
                                     )}
@@ -1600,12 +2417,11 @@ export default Profile;
 ```js
 import axios from "axios";
 
-const API_BASE_URL =
-    import.meta.env.VITE_API_URL;
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 const api = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 15000, // 15 seconds
+    timeout: 30000, // 15 seconds
     headers: {
         "Content-Type": "application/json",
     },
@@ -1642,16 +2458,29 @@ api.interceptors.response.use(
             return Promise.reject(networkError);
         }
 
-        // Token refresh logic
+        // Token refresh logic - ONLY if we have a refresh token
         if (error.response?.status === 401 && !originalRequest._retry) {
+            const refreshToken = localStorage.getItem("refreshToken");
+
+            // If no refresh token, don't attempt refresh
+            if (!refreshToken) {
+                console.error("No refresh token available");
+                // Clear auth data and redirect to login
+                localStorage.removeItem("accessToken");
+                localStorage.removeItem("refreshToken");
+                localStorage.removeItem("user");
+
+                // Only redirect if not already on login page
+                if (window.location.pathname !== "/login") {
+                    window.location.href = "/login";
+                }
+
+                return Promise.reject(new Error("No refresh token available"));
+            }
+
             originalRequest._retry = true;
 
             try {
-                const refreshToken = localStorage.getItem("refreshToken");
-                if (!refreshToken) {
-                    throw new Error("No refresh token");
-                }
-
                 const response = await axios.post(
                     `${API_BASE_URL}/auth/refresh-token`,
                     { refreshToken }
@@ -1926,12 +2755,24 @@ export const useAuthStore = create(
             isAuthenticated: false,
             isLoading: false,
             error: null,
+            isInitialized: false,
 
             // Initialize auth state from localStorage
             initialize: async () => {
+                // If already initialized, return early
+                if (get().isInitialized) {
+                    return;
+                }
+
                 const accessToken = localStorage.getItem("accessToken");
                 const refreshToken = localStorage.getItem("refreshToken");
                 const userStr = localStorage.getItem("user");
+
+                console.log("Auth initialization:", {
+                    accessToken: !!accessToken,
+                    refreshToken: !!refreshToken,
+                    userStr: !!userStr,
+                });
 
                 if (accessToken && refreshToken && userStr) {
                     try {
@@ -1941,14 +2782,33 @@ export const useAuthStore = create(
                             refreshToken,
                             user,
                             isAuthenticated: true,
+                            isInitialized: true,
                         });
+                        console.log("Auth initialized successfully");
                     } catch (error) {
                         console.error(
                             "Failed to parse stored user data:",
                             error
                         );
-                        get().logout();
+                        // Clear invalid data
+                        localStorage.removeItem("accessToken");
+                        localStorage.removeItem("refreshToken");
+                        localStorage.removeItem("user");
+                        set({
+                            isInitialized: true,
+                            isAuthenticated: false,
+                        });
                     }
+                } else {
+                    // No valid tokens found, ensure clean state
+                    console.log("No valid tokens found, clearing auth state");
+                    set({
+                        isInitialized: true,
+                        isAuthenticated: false,
+                        user: null,
+                        accessToken: null,
+                        refreshToken: null,
+                    });
                 }
             },
 
@@ -1971,6 +2831,7 @@ export const useAuthStore = create(
                         isAuthenticated: true,
                         isLoading: false,
                         error: null,
+                        isInitialized: true,
                     });
 
                     return response;
@@ -2001,6 +2862,7 @@ export const useAuthStore = create(
                         isAuthenticated: true,
                         isLoading: false,
                         error: null,
+                        isInitialized: true,
                     });
 
                     return response;
@@ -2035,6 +2897,7 @@ export const useAuthStore = create(
                         isAuthenticated: false,
                         isLoading: false,
                         error: null,
+                        isInitialized: true,
                     });
                 }
             },
@@ -2078,6 +2941,7 @@ export const useAuthStore = create(
                 accessToken: state.accessToken,
                 refreshToken: state.refreshToken,
                 isAuthenticated: state.isAuthenticated,
+                isInitialized: state.isInitialized,
             }),
         }
     )
@@ -2089,7 +2953,6 @@ export const useAuthStore = create(
 ```js
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
-import { useAuthStore } from "./authStore";
 import { getErrorMessage } from "../utils/errorUtils";
 import { sortConversations, getOtherUser } from "../utils/chatUtils";
 
@@ -2099,8 +2962,25 @@ export const useConversationStore = create((set, get) => ({
     currentConversationId: null,
     isLoading: false,
     error: null,
+    hasLoadedConversations: false, // Add flag to prevent multiple loads
 
     loadConversations: async () => {
+        // Prevent multiple simultaneous loads
+        if (get().isLoading || get().hasLoadedConversations) return;
+
+        // Check if we have tokens before making the request
+        const accessToken = localStorage.getItem("accessToken");
+        const refreshToken = localStorage.getItem("refreshToken");
+
+        if (!accessToken || !refreshToken) {
+            console.error("No tokens available for loading conversations");
+            set({
+                error: "Authentication required",
+                hasLoadedConversations: true,
+            });
+            return;
+        }
+
         set({ isLoading: true, error: null });
         try {
             const response = await chatService.getConversations();
@@ -2119,13 +2999,19 @@ export const useConversationStore = create((set, get) => ({
                     conversations: newConversations,
                     conversationsList: sortedConversations,
                     isLoading: false,
+                    hasLoadedConversations: true,
                 };
             });
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load conversations";
-            set({ isLoading: false, error: errorMessage });
-            throw new Error(errorMessage);
+            console.error("Failed to load conversations:", error);
+            set({
+                isLoading: false,
+                error: errorMessage,
+                hasLoadedConversations: true,
+            });
+            // Don't throw error here to prevent infinite loop
         }
     },
 
@@ -2162,10 +3048,11 @@ export const useConversationStore = create((set, get) => ({
     },
 
     getOrCreateConversation: async (user2Id) => {
-        const { user } = useAuthStore.getState();
-        if (!user) throw new Error("User not authenticated");
+        // Get conversations from current state
+        const conversations = get().conversationsList;
 
-        const existingConversation = get().conversationsList.find(
+        // Check if conversation already exists
+        const existingConversation = conversations.find(
             (conv) => conv.user1_id === user2Id || conv.user2_id === user2Id
         );
 
@@ -2174,6 +3061,7 @@ export const useConversationStore = create((set, get) => ({
             return existingConversation;
         }
 
+        // Create new conversation if it doesn't exist
         return await get().createConversation(user2Id);
     },
 
@@ -2222,9 +3110,30 @@ export const useConversationStore = create((set, get) => ({
         const conversation = state.conversations.get(
             state.currentConversationId
         );
-        const currentUserId = useAuthStore.getState().user?.id;
-        return conversation ? getOtherUser(conversation, currentUserId) : null;
+        // Get current user ID from localStorage to avoid circular dependency
+        const userStr = localStorage.getItem("user");
+        if (!userStr) return null;
+
+        try {
+            const currentUser = JSON.parse(userStr);
+            return conversation
+                ? getOtherUser(conversation, currentUser.id)
+                : null;
+        } catch (error) {
+            console.error("Failed to parse user from localStorage:", error);
+            return null;
+        }
     },
+
+    resetStore: () =>
+        set({
+            conversations: new Map(),
+            conversationsList: [],
+            currentConversationId: null,
+            isLoading: false,
+            error: null,
+            hasLoadedConversations: false,
+        }),
 }));
 
 ```
@@ -2589,62 +3498,69 @@ export const useUIStore = create(
 import { create } from "zustand";
 import { userService } from "../services/userService";
 import { getErrorMessage } from "../utils/errorUtils";
-import { truncateText } from "../utils/stringUtils";
 
 export const useUserStore = create((set, get) => ({
     currentUser: null,
-    users: new Map(),
+    users: [],
     searchedUsers: [],
     onlineUsers: new Set(),
     isLoading: false,
     error: null,
+    hasLoadedCurrentUser: false,
 
     loadCurrentUser: async () => {
+        if (get().hasLoadedCurrentUser) {
+            return;
+        }
+
+        const accessToken = localStorage.getItem("accessToken");
+        const refreshToken = localStorage.getItem("refreshToken");
+
+        if (!accessToken || !refreshToken) {
+            set({
+                error: "Authentication required",
+                hasLoadedCurrentUser: true,
+            });
+            return;
+        }
+
         set({ isLoading: true, error: null });
         try {
             const response = await userService.getProfile();
             const user = response.data.data.user;
 
-            set((state) => {
-                const newUsers = new Map(state.users);
-                newUsers.set(user.id, user);
-                return {
-                    currentUser: user,
-                    users: newUsers,
-                    isLoading: false,
-                };
+            set({
+                currentUser: user,
+                users: [user],
+                isLoading: false,
+                hasLoadedCurrentUser: true,
             });
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load profile";
-            set({ isLoading: false, error: errorMessage });
-            throw new Error(errorMessage);
+            set({
+                isLoading: false,
+                error: errorMessage,
+                hasLoadedCurrentUser: true,
+            });
         }
     },
 
-    updateProfile: async (profileData) => {
+    getAllUsers: async () => {
         set({ isLoading: true, error: null });
         try {
-            const response = await userService.updateProfile(profileData);
-            const updatedUser = response.data.data.user;
+            const response = await userService.getAllUsers();
+            const users = response.data.data.users;
 
-            const { updateUser } = useAuthStore.getState();
-            updateUser(updatedUser);
-
-            set((state) => {
-                const newUsers = new Map(state.users);
-                newUsers.set(updatedUser.id, updatedUser);
-                return {
-                    currentUser: updatedUser,
-                    users: newUsers,
-                    isLoading: false,
-                };
+            set({
+                users: users,
+                isLoading: false,
             });
 
-            return updatedUser;
+            return users;
         } catch (error) {
             const errorMessage =
-                getErrorMessage(error) || "Failed to update profile";
+                getErrorMessage(error) || "Failed to load users";
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
@@ -2662,14 +3578,9 @@ export const useUserStore = create((set, get) => ({
             const response = await userService.searchUsers(trimmedQuery, limit);
             const users = response.data.data.users;
 
-            set((state) => {
-                const newUsers = new Map(state.users);
-                users.forEach((user) => newUsers.set(user.id, user));
-                return {
-                    searchedUsers: users,
-                    users: newUsers,
-                    isLoading: false,
-                };
+            set({
+                searchedUsers: users,
+                isLoading: false,
             });
 
             return users;
@@ -2681,57 +3592,80 @@ export const useUserStore = create((set, get) => ({
         }
     },
 
-    loadUserById: async (userId) => {
-        const cachedUser = get().users.get(userId);
-        if (cachedUser) return cachedUser;
-
+    updateProfile: async (profileData) => {
         set({ isLoading: true, error: null });
         try {
-            const response = await userService.getUserById(userId);
-            const user = response.data.data.user;
+            const response = await userService.updateProfile(profileData);
+            const updatedUser =
+                response.data?.data?.user ||
+                response.data?.data ||
+                response.data?.user ||
+                response.data;
 
-            set((state) => {
-                const newUsers = new Map(state.users);
-                newUsers.set(user.id, user);
-                return {
-                    users: newUsers,
-                    isLoading: false,
-                };
+            if (!updatedUser || !updatedUser.id) {
+                throw new Error("Invalid user data in response");
+            }
+
+            set({
+                currentUser: updatedUser,
+                isLoading: false,
+                error: null,
             });
 
-            return user;
+            return updatedUser;
         } catch (error) {
             const errorMessage =
-                getErrorMessage(error) || "Failed to load user";
-            set({ isLoading: false, error: errorMessage });
-            throw new Error(errorMessage);
-        }
-    },
-
-    updateOnlineStatus: async (isOnline) => {
-        try {
-            await userService.updateOnlineStatus(isOnline);
-
-            set((state) => {
-                if (!state.currentUser) return state;
-
-                const updatedUser = {
-                    ...state.currentUser,
-                    is_online: isOnline,
-                };
-                const newUsers = new Map(state.users);
-                newUsers.set(updatedUser.id, updatedUser);
-
-                return {
-                    currentUser: updatedUser,
-                    users: newUsers,
-                };
+                getErrorMessage(error) || "Failed to update profile";
+            set({
+                isLoading: false,
+                error: errorMessage,
             });
-        } catch (error) {
-            console.error("Failed to update online status:", error);
+            throw error;
         }
     },
 
+    uploadAvatar: async (file) => {
+        set({ isLoading: true, error: null });
+        try {
+            const formData = new FormData();
+            formData.append("avatar_file", file);
+
+            const response = await userService.updateProfile(formData);
+            const updatedUser =
+                response.data?.data?.user ||
+                response.data?.data ||
+                response.data?.user ||
+                response.data;
+
+            if (!updatedUser || !updatedUser.id) {
+                throw new Error("Invalid user data in response");
+            }
+
+            set({
+                currentUser: updatedUser,
+                isLoading: false,
+                error: null,
+            });
+
+            return updatedUser;
+        } catch (error) {
+            const errorMessage =
+                getErrorMessage(error) || "Failed to upload avatar";
+            set({
+                isLoading: false,
+                error: errorMessage,
+            });
+            throw error;
+        }
+    },
+
+    clearSearch: () => set({ searchedUsers: [] }),
+    clearError: () => set({ error: null }),
+    getUserById: (userId) => {
+        const state = get();
+        return state.users.find((user) => user && user.id === userId);
+    },
+    isUserOnline: (userId) => get().onlineUsers.has(userId),
     setUserOnline: (userId) => {
         set((state) => {
             const newOnlineUsers = new Set(state.onlineUsers);
@@ -2739,23 +3673,12 @@ export const useUserStore = create((set, get) => ({
             return { onlineUsers: newOnlineUsers };
         });
     },
-
     setUserOffline: (userId) => {
         set((state) => {
             const newOnlineUsers = new Set(state.onlineUsers);
             newOnlineUsers.delete(userId);
             return { onlineUsers: newOnlineUsers };
         });
-    },
-
-    clearSearch: () => set({ searchedUsers: [] }),
-    clearError: () => set({ error: null }),
-
-    getUserById: (userId) => get().users.get(userId),
-    isUserOnline: (userId) => get().onlineUsers.has(userId),
-    getUserDisplayName: (userId) => {
-        const user = get().users.get(userId);
-        return user ? truncateText(user.full_name, 20) : "Unknown User";
     },
 }));
 

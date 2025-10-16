@@ -1,3 +1,4 @@
+import {useEffect, useState} from 'react';
 import Layout from '@/components/layout/Layout';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -5,12 +6,14 @@ import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {useAuthStore} from '@/stores/authStore';
 import {useUserStore} from '@/stores/userStore';
-import {useState} from 'react';
 import {User, Mail, Camera, Save, X, Key, Upload} from 'lucide-react';
+import ProfileSkeleton from "@/components/ui/skeleton/ProfileSkeleton";
+import {useNavigate} from 'react-router-dom';
 
 const Profile = () => {
-    const {user} = useAuthStore();
+    const {user, isAuthenticated, updateUser} = useAuthStore();
     const {updateProfile, isLoading, error, clearError} = useUserStore();
+    const navigate = useNavigate();
     const [isEditing, setIsEditing] = useState(false);
     const [isChangingPassword, setIsChangingPassword] = useState(false);
     const [formData, setFormData] = useState({
@@ -24,6 +27,50 @@ const Profile = () => {
     const [avatarFile, setAvatarFile] = useState(null);
     const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || '');
     const [success, setSuccess] = useState('');
+    const [pageLoading, setPageLoading] = useState(true);
+    const [hasLoadedProfile, setHasLoadedProfile] = useState(false);
+
+    useEffect(() => {
+        if (!isAuthenticated) {
+            navigate('/login');
+            return;
+        }
+
+        if (!hasLoadedProfile && user) {
+            const initializeProfile = async () => {
+                try {
+                    const accessToken = localStorage.getItem("accessToken");
+                    const refreshToken = localStorage.getItem("refreshToken");
+
+                    if (!accessToken || !refreshToken) {
+                        setPageLoading(false);
+                        setHasLoadedProfile(true);
+                        return;
+                    }
+
+                    const userStore = useUserStore.getState();
+                    if (!userStore.currentUser) {
+                        await userStore.loadCurrentUser();
+                    }
+                } catch (error) {
+                } finally {
+                    setPageLoading(false);
+                    setHasLoadedProfile(true);
+                }
+            };
+
+            initializeProfile();
+        } else {
+            setPageLoading(false);
+        }
+    }, [user, hasLoadedProfile, isAuthenticated, navigate]);
+
+    // Reset avatar preview when user changes
+    useEffect(() => {
+        if (user?.avatar_url) {
+            setAvatarPreview(getAvatarUrl(user.avatar_url));
+        }
+    }, [user]);
 
     const handleSave = async () => {
         clearError();
@@ -39,24 +86,69 @@ const Profile = () => {
             updateData.append('avatar_file', avatarFile);
         }
 
-        try {
-            await updateProfile(updateData);
-            setSuccess('Profile updated successfully');
+        if (updateData.get('full_name') === null && updateData.get('avatar_file') === null) {
+            setSuccess('No changes to save');
             setIsEditing(false);
-            setAvatarFile(null);
-        } catch (error) {
-            console.error('Profile update failed:', error);
+            return;
         }
+
+        try {
+            const updatedUser = await updateProfile(updateData);
+
+            if (updatedUser && updatedUser.id) {
+                setSuccess('Profile updated successfully');
+                setIsEditing(false);
+                setAvatarFile(null);
+
+                // Force refresh user data from server
+                const userStore = useUserStore.getState();
+                await userStore.loadCurrentUser();
+                const freshUser = userStore.currentUser;
+
+                if (freshUser) {
+                    updateUser(freshUser);
+                    if (freshUser.avatar_url) {
+                        setAvatarPreview(getAvatarUrl(freshUser.avatar_url));
+                    }
+                }
+            }
+        } catch (error) {
+        }
+    };
+
+    const handleAvatarChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            useUserStore.setState({error: 'Please select a valid image file'});
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+            useUserStore.setState({error: 'Image must be smaller than 5MB'});
+            return;
+        }
+
+        setAvatarFile(file);
+        clearError();
+
+        // Create preview
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            setAvatarPreview(e.target.result);
+        };
+        reader.readAsDataURL(file);
     };
 
     const handlePasswordChange = async () => {
         if (passwordData.newPassword !== passwordData.confirmPassword) {
-            clearError();
+            useUserStore.setState({error: 'Passwords do not match'});
             return;
         }
 
         if (passwordData.newPassword.length < 6) {
-            clearError();
+            useUserStore.setState({error: 'Password must be at least 6 characters long'});
             return;
         }
 
@@ -77,30 +169,7 @@ const Profile = () => {
             });
             setIsChangingPassword(false);
         } catch (error) {
-            console.error('Password update failed:', error);
         }
-    };
-
-    const handleAvatarChange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        if (!file.type.startsWith('image/')) {
-            return;
-        }
-
-        if (file.size > 5 * 1024 * 1024) {
-            return;
-        }
-
-        setAvatarFile(file);
-        clearError();
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            setAvatarPreview(e.target.result);
-        };
-        reader.readAsDataURL(file);
     };
 
     const handleCancel = () => {
@@ -108,7 +177,7 @@ const Profile = () => {
             full_name: user?.full_name || '',
         });
         setAvatarFile(null);
-        setAvatarPreview(user?.avatar_url || '');
+        setAvatarPreview(user?.avatar_url ? getAvatarUrl(user.avatar_url) : '');
         clearError();
         setSuccess('');
         setIsEditing(false);
@@ -120,6 +189,50 @@ const Profile = () => {
     };
 
     const passwordsMatch = passwordData.newPassword === passwordData.confirmPassword || !passwordData.confirmPassword;
+
+    const getAvatarUrl = (url) => {
+        if (!url) return null;
+
+        console.log('Original avatar URL:', url);
+
+        // If it's already a full URL, return as is
+        if (url.startsWith('http')) return url;
+
+        // If it starts with /, it's a relative path to the backend
+        if (url.startsWith('/')) {
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+            const fullUrl = `${apiUrl}${url}`;
+            console.log('Constructed avatar URL:', fullUrl);
+            return fullUrl;
+        }
+
+        // If it's just a filename, assume it's in uploads directory
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+        const fullUrl = `${apiUrl}/uploads/${url}`;
+        console.log('Constructed avatar URL from filename:', fullUrl);
+        return fullUrl;
+    };
+
+    const handleEditClick = () => {
+        setIsEditing(true);
+        setFormData({
+            full_name: user?.full_name || '',
+        });
+        setAvatarPreview(user?.avatar_url ? getAvatarUrl(user.avatar_url) : '');
+        setAvatarFile(null);
+    };
+
+    if (pageLoading) {
+        return (
+            <Layout>
+                <ProfileSkeleton />
+            </Layout>
+        );
+    }
+
+    if (!isAuthenticated) {
+        return null;
+    }
 
     return (
         <Layout>
@@ -148,7 +261,7 @@ const Profile = () => {
                             <CardHeader>
                                 <CardTitle>Profile Picture</CardTitle>
                                 <CardDescription>
-                                    Update your profile photo
+                                    {isEditing ? 'Select a new profile photo' : 'Your profile photo'}
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
@@ -160,24 +273,27 @@ const Profile = () => {
                                                     src={avatarPreview}
                                                     alt="Profile"
                                                     className="w-32 h-32 rounded-full object-cover"
+                                                    onError={(e) => {
+                                                        console.error('Failed to load avatar image:', avatarPreview);
+                                                        e.target.style.display = 'none';
+                                                        const nextSibling = e.target.nextSibling;
+                                                        if (nextSibling && nextSibling.style) {
+                                                            nextSibling.style.display = 'flex';
+                                                        }
+                                                    }}
                                                 />
-                                            ) : user?.avatar_url ? (
-                                                <img
-                                                    src={user.avatar_url}
-                                                    alt="Profile"
-                                                    className="w-32 h-32 rounded-full object-cover"
-                                                />
-                                            ) : (
+                                            ) : null}
+                                            {(!avatarPreview) && (
                                                 <User className="h-16 w-16 text-primary" />
                                             )}
                                         </div>
                                         {isEditing && (
-                                            <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full p-2 cursor-pointer hover:bg-primary/90">
+                                            <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full p-2 cursor-pointer hover:bg-primary/90 transition-colors">
                                                 <Camera className="h-4 w-4" />
                                                 <input
                                                     id="avatar-upload"
                                                     type="file"
-                                                    accept="image/*"
+                                                    accept="image/jpeg,image/png,image/webp,image/gif"
                                                     onChange={handleAvatarChange}
                                                     className="hidden"
                                                     disabled={isLoading}
@@ -186,16 +302,27 @@ const Profile = () => {
                                         )}
                                     </div>
                                     {isEditing ? (
-                                        <label htmlFor="avatar-upload" className="w-full">
-                                            <Button variant="outline" className="w-full" disabled={isLoading}>
-                                                <Upload className="h-4 w-4 mr-2" />
-                                                Change Photo
-                                            </Button>
-                                        </label>
+                                        <div className="text-center">
+                                            <p className="text-sm text-muted-foreground mb-2">
+                                                {avatarFile ? 'New photo selected' : 'Click the camera icon to choose a photo'}
+                                            </p>
+                                            {avatarFile && (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Click "Save Changes" to update your profile
+                                                </p>
+                                            )}
+                                        </div>
                                     ) : (
-                                        <p className="text-sm text-muted-foreground text-center">
-                                            Click Edit Profile to change your photo
-                                        </p>
+                                        <div className="text-center">
+                                            <p className="text-sm text-muted-foreground">
+                                                Click "Edit Profile" to change your photo
+                                            </p>
+                                            {user?.avatar_url && (
+                                                <p className="text-xs text-muted-foreground mt-1">
+                                                    Current avatar URL: {user.avatar_url}
+                                                </p>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             </CardContent>
@@ -256,7 +383,7 @@ const Profile = () => {
                                             </Button>
                                         </>
                                     ) : (
-                                        <Button onClick={() => setIsEditing(true)}>
+                                        <Button onClick={handleEditClick}>
                                             Edit Profile
                                         </Button>
                                     )}

@@ -34,6 +34,13 @@ export const handleProfileError = (res, error) => {
         USER_NOT_FOUND: () => notFoundResponse(res, "User not found"),
         UPLOAD_FAILED: () => errorResponse(res, "Failed to upload image", 502),
         DELETE_FAILED: () => errorResponse(res, "Failed to delete image", 502),
+        INVALID_IMAGE_FORMAT: () =>
+            badRequestResponse(
+                res,
+                "Invalid image format. Supported formats: JPEG, PNG, WebP"
+            ),
+        IMAGE_TOO_LARGE: () =>
+            badRequestResponse(res, "Image size too large. Maximum size: 5MB"),
     };
 
     const handler = errorMap[error.message];
@@ -203,3 +210,4 @@ export const handleOAuthError = (res, error) => {
         errorResponse(res, "OAuth authentication failed");
     }
 };
+

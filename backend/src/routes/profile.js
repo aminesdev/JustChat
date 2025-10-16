@@ -3,7 +3,7 @@ import { updateProfile, getProfile } from "../controllers/profileController.js";
 import { authenticateToken } from "../middlewares/auth.js";
 import { validate } from "../middlewares/validation.js";
 import { profileValidation } from "../utils/validationSchemas.js";
-import { upload } from "../middlewares/upload.js"; // This import should now work
+import { upload } from "../middlewares/upload.js";
 
 const router = express.Router();
 
@@ -57,8 +57,7 @@ router.get("/me", authenticateToken, getProfile);
 router.put(
     "/update",
     authenticateToken,
-    upload.single("avatar_file"), // This middleware handles file uploads
-    validate(profileValidation.updateProfile),
+    upload.single("avatar_file"),
     updateProfile
 );
 

@@ -22,10 +22,25 @@ export const updateProfileService = async (userId, updateData) => {
 
     let newAvatarUrl = null;
     if (avatar_file) {
+        // Validate file type
+        if (!avatar_file.mimetype.startsWith("image/")) {
+            throw new Error("INVALID_IMAGE_FORMAT");
+        }
+
+        // Validate file size (5MB limit)
+        if (avatar_file.size > 5 * 1024 * 1024) {
+            throw new Error("IMAGE_TOO_LARGE");
+        }
+
         try {
-            const uploadResult = await uploadImageService(avatar_file);
+            const uploadResult = await uploadImageService(
+                avatar_file.buffer,
+                "profiles"
+            );
             newAvatarUrl = uploadResult.secure_url;
             updateFields.avatar_url = newAvatarUrl;
+
+            // Delete old avatar if exists
             if (user.avatar_url) {
                 const oldPublicId = extractPublicId(user.avatar_url);
                 if (oldPublicId) {
@@ -36,6 +51,7 @@ export const updateProfileService = async (userId, updateData) => {
                             "Failed to delete old image:",
                             error.message
                         );
+                        // Don't throw error, continue with update
                     }
                 }
             }
@@ -43,6 +59,7 @@ export const updateProfileService = async (userId, updateData) => {
             throw error;
         }
     }
+
     if (newPassword) {
         if (!currentPassword) {
             throw new Error("CURRENT_PASSWORD_REQUIRED");

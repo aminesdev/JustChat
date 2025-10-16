@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { chatService } from "../services/chatService";
-import { useAuthStore } from "./authStore";
 import { getErrorMessage } from "../utils/errorUtils";
 import { sortConversations, getOtherUser } from "../utils/chatUtils";
 
@@ -10,8 +9,25 @@ export const useConversationStore = create((set, get) => ({
     currentConversationId: null,
     isLoading: false,
     error: null,
+    hasLoadedConversations: false, // Add flag to prevent multiple loads
 
     loadConversations: async () => {
+        // Prevent multiple simultaneous loads
+        if (get().isLoading || get().hasLoadedConversations) return;
+
+        // Check if we have tokens before making the request
+        const accessToken = localStorage.getItem("accessToken");
+        const refreshToken = localStorage.getItem("refreshToken");
+
+        if (!accessToken || !refreshToken) {
+            console.error("No tokens available for loading conversations");
+            set({
+                error: "Authentication required",
+                hasLoadedConversations: true,
+            });
+            return;
+        }
+
         set({ isLoading: true, error: null });
         try {
             const response = await chatService.getConversations();
@@ -30,13 +46,19 @@ export const useConversationStore = create((set, get) => ({
                     conversations: newConversations,
                     conversationsList: sortedConversations,
                     isLoading: false,
+                    hasLoadedConversations: true,
                 };
             });
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load conversations";
-            set({ isLoading: false, error: errorMessage });
-            throw new Error(errorMessage);
+            console.error("Failed to load conversations:", error);
+            set({
+                isLoading: false,
+                error: errorMessage,
+                hasLoadedConversations: true,
+            });
+            // Don't throw error here to prevent infinite loop
         }
     },
 
@@ -73,10 +95,11 @@ export const useConversationStore = create((set, get) => ({
     },
 
     getOrCreateConversation: async (user2Id) => {
-        const { user } = useAuthStore.getState();
-        if (!user) throw new Error("User not authenticated");
+        // Get conversations from current state
+        const conversations = get().conversationsList;
 
-        const existingConversation = get().conversationsList.find(
+        // Check if conversation already exists
+        const existingConversation = conversations.find(
             (conv) => conv.user1_id === user2Id || conv.user2_id === user2Id
         );
 
@@ -85,6 +108,7 @@ export const useConversationStore = create((set, get) => ({
             return existingConversation;
         }
 
+        // Create new conversation if it doesn't exist
         return await get().createConversation(user2Id);
     },
 
@@ -133,7 +157,28 @@ export const useConversationStore = create((set, get) => ({
         const conversation = state.conversations.get(
             state.currentConversationId
         );
-        const currentUserId = useAuthStore.getState().user?.id;
-        return conversation ? getOtherUser(conversation, currentUserId) : null;
+        // Get current user ID from localStorage to avoid circular dependency
+        const userStr = localStorage.getItem("user");
+        if (!userStr) return null;
+
+        try {
+            const currentUser = JSON.parse(userStr);
+            return conversation
+                ? getOtherUser(conversation, currentUser.id)
+                : null;
+        } catch (error) {
+            console.error("Failed to parse user from localStorage:", error);
+            return null;
+        }
     },
+
+    resetStore: () =>
+        set({
+            conversations: new Map(),
+            conversationsList: [],
+            currentConversationId: null,
+            isLoading: false,
+            error: null,
+            hasLoadedConversations: false,
+        }),
 }));

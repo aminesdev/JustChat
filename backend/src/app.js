@@ -10,13 +10,7 @@ const corsOptions = {
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
 
-        const allowedOrigins = [
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "http://localhost:3000",
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:5174",
-        ];
+        const allowedOrigins = ["http://localhost:5176/"];
 
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
@@ -31,8 +25,6 @@ const corsOptions = {
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 };
 
-// Apply CORS with options
-app.use(cors(corsOptions));
 
 // Parse JSON bodies
 app.use(express.json({ limit: "10mb" }));
