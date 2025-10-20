@@ -29,6 +29,8 @@ export const githubCallback = (req, res, next) => {
 
 // Handle OAuth callback
 const handleOAuthCallback = (req, res, err, user, info) => {
+    console.log("OAuth callback started");
+
     if (err) {
         console.error("OAuth callback error:", err);
         return res.redirect(
@@ -39,6 +41,7 @@ const handleOAuthCallback = (req, res, err, user, info) => {
     }
 
     if (!user) {
+        console.error("No user returned from OAuth");
         return res.redirect(
             `${process.env.CLIENT_URL}${
                 process.env.CLIENT_ERROR_REDIRECT || "/login"
@@ -46,24 +49,72 @@ const handleOAuthCallback = (req, res, err, user, info) => {
         );
     }
 
-    try {
-        const config = oauthService.validateOAuthConfig();
+    console.log("OAuth successful for user:", user.user?.email);
 
-        // Redirect to frontend with tokens as URL parameters
-        const redirectUrl = `${config.client.url}${
+    try {
+        // Debug: Check environment variables directly
+        console.log("Environment variables check:");
+        console.log("CLIENT_URL:", process.env.CLIENT_URL);
+        console.log(
+            "CLIENT_SUCCESS_REDIRECT:",
+            process.env.CLIENT_SUCCESS_REDIRECT
+        );
+        console.log(
+            "CLIENT_ERROR_REDIRECT:",
+            process.env.CLIENT_ERROR_REDIRECT
+        );
+
+        // Get config from service
+        const config = oauthService.validateOAuthConfig();
+        console.log("OAuth service config:");
+        console.log("config.client.url:", config.client.url);
+        console.log(
+            "config.client.successRedirect:",
             config.client.successRedirect
-        }?accessToken=${user.accessToken}&refreshToken=${
-            user.refreshToken
-        }&user=${encodeURIComponent(JSON.stringify(user.user))}`;
+        );
+        console.log(
+            "config.client.errorRedirect:",
+            config.client.errorRedirect
+        );
+
+        // Use environment variables directly to ensure we have the latest values
+        const clientUrl = process.env.CLIENT_URL;
+        const successRedirect =
+            process.env.CLIENT_SUCCESS_REDIRECT || "/oauth-callback";
+
+        console.log("Using redirect values:");
+        console.log("clientUrl:", clientUrl);
+        console.log("successRedirect:", successRedirect);
+
+        const redirectUrl = `${clientUrl}${successRedirect}?accessToken=${
+            user.accessToken
+        }&refreshToken=${user.refreshToken}&user=${encodeURIComponent(
+            JSON.stringify(user.user)
+        )}`;
+
+        console.log("Final redirect URL:", redirectUrl);
+        console.log(
+            "User tokens generated - accessToken length:",
+            user.accessToken?.length
+        );
+        console.log("User data:", {
+            id: user.user?.id,
+            email: user.user?.email,
+            name: user.user?.full_name,
+        });
 
         res.redirect(redirectUrl);
     } catch (redirectError) {
         console.error("Redirect error:", redirectError);
-        res.redirect(
-            `${process.env.CLIENT_URL}${
-                process.env.CLIENT_ERROR_REDIRECT || "/login"
-            }?error=redirect_failed`
-        );
+        console.error("Redirect error stack:", redirectError.stack);
+
+        // Fallback to environment variables for error redirect
+        const errorRedirectUrl = `${process.env.CLIENT_URL}${
+            process.env.CLIENT_ERROR_REDIRECT || "/login"
+        }?error=redirect_failed`;
+
+        console.log("Error redirect URL:", errorRedirectUrl);
+        res.redirect(errorRedirectUrl);
     }
 };
 
