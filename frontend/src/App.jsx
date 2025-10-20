@@ -14,6 +14,9 @@ function App() {
     const {theme} = useUIStore();
     const [isInitialized, setIsInitialized] = useState(false);
 
+    // Debug log to see authentication state
+    console.log('🔍 App component - isAuthenticated:', isAuthenticated);
+
     // Initialize auth and theme on app load - RUN ONLY ONCE
     useEffect(() => {
         const initApp = async () => {

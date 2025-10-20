@@ -16,8 +16,19 @@ export const useAuthStore = create(
             isInitialized: false,
 
             // Initialize auth state from localStorage
-            initialize: async () => {
-                if (get().isInitialized) {
+            initialize: async (force = false) => {
+                console.log("🔄 AuthStore initialize() called - START", {
+                    force,
+                });
+
+                // If forcing re-initialization, reset the state
+                if (force) {
+                    console.log("🔄 Force re-initialization requested");
+                    set({ isInitialized: false });
+                }
+
+                if (get().isInitialized && !force) {
+                    console.log("✅ AuthStore already initialized, skipping");
                     return;
                 }
 
@@ -25,15 +36,24 @@ export const useAuthStore = create(
                 const refreshToken = localStorage.getItem("refreshToken");
                 const userStr = localStorage.getItem("user");
 
-                console.log("🔐 Auth initialization:", {
-                    accessToken: !!accessToken,
-                    refreshToken: !!refreshToken,
-                    userStr: !!userStr,
+                console.log("🔐 Auth initialization - localStorage check:", {
+                    accessToken: accessToken
+                        ? `Present (${accessToken.substring(0, 20)}...)`
+                        : "Missing",
+                    refreshToken: refreshToken
+                        ? `Present (${refreshToken.substring(0, 20)}...)`
+                        : "Missing",
+                    userStr: userStr ? "Present" : "Missing",
                 });
 
                 if (accessToken && refreshToken && userStr) {
                     try {
                         const user = JSON.parse(userStr);
+                        console.log(
+                            "✅ Setting authenticated state with user:",
+                            user.email
+                        );
+
                         set({
                             accessToken,
                             refreshToken,
@@ -41,7 +61,23 @@ export const useAuthStore = create(
                             isAuthenticated: true,
                             isInitialized: true,
                         });
-                        console.log("✅ Auth initialized successfully", user);
+
+                        console.log(
+                            "✅ Auth initialized successfully - state should be:",
+                            {
+                                isAuthenticated: true,
+                                isInitialized: true,
+                                userEmail: user.email,
+                            }
+                        );
+
+                        // Verify the state was actually set
+                        const currentState = get();
+                        console.log("✅ Current auth state after set:", {
+                            isAuthenticated: currentState.isAuthenticated,
+                            isInitialized: currentState.isInitialized,
+                            user: currentState.user?.email,
+                        });
                     } catch (error) {
                         console.error(
                             "❌ Failed to parse stored user data:",
@@ -57,7 +93,7 @@ export const useAuthStore = create(
                     }
                 } else {
                     console.log(
-                        "❌ No valid tokens found, clearing auth state"
+                        "❌ No valid tokens found, setting unauthenticated state"
                     );
                     set({
                         isInitialized: true,
@@ -67,6 +103,14 @@ export const useAuthStore = create(
                         refreshToken: null,
                     });
                 }
+
+                console.log("🔄 AuthStore initialize() called - END");
+            },
+
+            // Reset initialization state
+            resetInitialization: () => {
+                console.log("🔄 Resetting auth store initialization");
+                set({ isInitialized: false });
             },
 
             login: async (credentials) => {
