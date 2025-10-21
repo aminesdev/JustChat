@@ -84,6 +84,13 @@ export const chatService = {
         return response;
     },
 
+    markAllAsRead: async (conversationId) => {
+        const response = await api.post(
+            `/conversations/${conversationId}/mark-all-read`
+        );
+        return response;
+    },
+
     getUnreadCount: async (conversationId) => {
         const response = await api.get(
             `/conversations/${conversationId}/unread-count`

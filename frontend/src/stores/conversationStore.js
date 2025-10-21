@@ -7,6 +7,12 @@ import {
     getProperLastMessage,
 } from "../utils/conversationHelpers";
 
+// Helper function to get current user ID
+const getCurrentUserId = () => {
+    const userStr = localStorage.getItem("user");
+    return userStr ? JSON.parse(userStr).id : null;
+};
+
 export const useConversationStore = create((set, get) => ({
     conversations: new Map(),
     conversationsList: [],
@@ -37,8 +43,7 @@ export const useConversationStore = create((set, get) => ({
             const conversations = response.data.data.conversations;
             console.log("✅ Raw conversations from API:", conversations);
 
-            const userStr = localStorage.getItem("user");
-            const currentUserId = userStr ? JSON.parse(userStr).id : null;
+            const currentUserId = getCurrentUserId();
             console.log("👤 Current user ID:", currentUserId);
 
             const processedConversations = processConversations(
@@ -97,8 +102,7 @@ export const useConversationStore = create((set, get) => ({
             const conversation = response.data.data.conversation;
             console.log("✅ Conversation created:", conversation);
 
-            const userStr = localStorage.getItem("user");
-            const currentUserId = userStr ? JSON.parse(userStr).id : null;
+            const currentUserId = getCurrentUserId();
 
             const processedConversation = {
                 ...conversation,
@@ -142,8 +146,7 @@ export const useConversationStore = create((set, get) => ({
     },
 
     getOrCreateConversation: async (user2Id) => {
-        const userStr = localStorage.getItem("user");
-        const currentUserId = userStr ? JSON.parse(userStr).id : null;
+        const currentUserId = getCurrentUserId();
 
         if (!currentUserId) {
             throw new Error("User not authenticated");
@@ -182,6 +185,71 @@ export const useConversationStore = create((set, get) => ({
         set({ currentConversationId: conversationId });
     },
 
+    markConversationAsRead: async (conversationId) => {
+        console.log("🔄 Marking conversation as read:", conversationId);
+
+        try {
+            // Call the backend endpoint to mark all messages as read
+            const response = await chatService.markAllAsRead(conversationId);
+            const { unread_count, has_unread_messages } = response.data.data;
+
+            console.log("✅ Backend marked conversation as read:", {
+                unread_count,
+                has_unread_messages,
+            });
+
+            // Update local state with backend response
+            set((state) => {
+                const existingConversation =
+                    state.conversations.get(conversationId);
+                if (!existingConversation) return state;
+
+                const updatedConversation = {
+                    ...existingConversation,
+                    unread_count,
+                    has_unread_messages,
+                };
+
+                const newConversations = new Map(state.conversations);
+                newConversations.set(conversationId, updatedConversation);
+
+                const conversationsList = state.conversationsList.map((conv) =>
+                    conv.id === conversationId ? updatedConversation : conv
+                );
+
+                return {
+                    conversations: newConversations,
+                    conversationsList,
+                };
+            });
+        } catch (error) {
+            console.error("Failed to mark conversation as read:", error);
+            // Even if backend fails, we can update UI optimistically
+            set((state) => {
+                const conversation = state.conversations.get(conversationId);
+                if (!conversation) return state;
+
+                const updatedConversation = {
+                    ...conversation,
+                    unread_count: 0,
+                    has_unread_messages: false,
+                };
+
+                const newConversations = new Map(state.conversations);
+                newConversations.set(conversationId, updatedConversation);
+
+                const conversationsList = state.conversationsList.map((conv) =>
+                    conv.id === conversationId ? updatedConversation : conv
+                );
+
+                return {
+                    conversations: newConversations,
+                    conversationsList,
+                };
+            });
+        }
+    },
+
     updateConversationLastMessage: (conversationId, lastMessage) => {
         console.log("🔄 Updating conversation last message:", {
             conversationId,
@@ -212,35 +280,8 @@ export const useConversationStore = create((set, get) => ({
         });
     },
 
-    markConversationAsRead: (conversationId) => {
-        console.log("🔄 Marking conversation as read:", conversationId);
-        set((state) => {
-            const conversation = state.conversations.get(conversationId);
-            if (!conversation) return state;
-
-            const updatedConversation = {
-                ...conversation,
-                unread_count: 0,
-                has_unread_messages: false,
-            };
-
-            const newConversations = new Map(state.conversations);
-            newConversations.set(conversationId, updatedConversation);
-
-            const conversationsList = state.conversationsList.map((conv) =>
-                conv.id === conversationId ? updatedConversation : conv
-            );
-
-            return {
-                conversations: newConversations,
-                conversationsList,
-            };
-        });
-    },
-
     updateConversationOnNewMessage: (conversationId, message) => {
-        const userStr = localStorage.getItem("user");
-        const currentUserId = userStr ? JSON.parse(userStr).id : null;
+        const currentUserId = getCurrentUserId();
 
         console.log("🔄 Updating conversation on new message:", {
             conversationId,
@@ -318,20 +359,12 @@ export const useConversationStore = create((set, get) => ({
         const conversation = state.conversations.get(
             state.currentConversationId
         );
-        const userStr = localStorage.getItem("user");
-        if (!userStr) return null;
-
-        try {
-            const currentUser = JSON.parse(userStr);
-            const otherUser = conversation
-                ? getOtherUser(conversation, currentUser.id)
-                : null;
-            console.log("🔄 Getting current other user:", otherUser);
-            return otherUser;
-        } catch (error) {
-            console.error("Failed to parse user from localStorage:", error);
-            return null;
-        }
+        const currentUserId = getCurrentUserId();
+        const otherUser = conversation
+            ? getOtherUser(conversation, currentUserId)
+            : null;
+        console.log("🔄 Getting current other user:", otherUser);
+        return otherUser;
     },
 
     resetStore: () => {

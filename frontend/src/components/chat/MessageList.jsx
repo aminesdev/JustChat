@@ -1,6 +1,7 @@
 import {useEffect, useRef} from 'react';
 import {useMessageStore} from '@/stores/messageStore';
 import {useAuthStore} from '@/stores/authStore';
+import {useConversationStore} from '@/stores/conversationStore';
 import {formatMessageTime, formatDateHeader} from '@/utils/dateUtils';
 import {getAvatarUrl} from '@/utils/avatarUtils';
 import {Card} from '@/components/ui/card';
@@ -9,6 +10,7 @@ import Avatar from '@/components/ui/Avatar';
 const MessageList = ({conversationId}) => {
     const {getGroupedMessages, loadMessages, getPagination, getMessages} = useMessageStore();
     const {user} = useAuthStore();
+    const {markConversationAsRead} = useConversationStore();
     const messagesEndRef = useRef(null);
     const messagesContainerRef = useRef(null);
 
@@ -19,8 +21,11 @@ const MessageList = ({conversationId}) => {
     useEffect(() => {
         if (conversationId) {
             loadMessages(conversationId);
+
+            // Mark conversation as read when opening it
+            markConversationAsRead(conversationId);
         }
-    }, [conversationId, loadMessages]);
+    }, [conversationId, loadMessages, markConversationAsRead]);
 
     useEffect(() => {
         scrollToBottom();
@@ -164,8 +169,8 @@ const MessageList = ({conversationId}) => {
                                         )}
 
                                         <div className={`rounded-lg px-3 py-2 ${isOwnMessage(message)
-                                                ? 'bg-primary text-primary-foreground'
-                                                : 'bg-muted'
+                                            ? 'bg-primary text-primary-foreground'
+                                            : 'bg-muted'
                                             }`}>
                                             {renderMessageContent(message)}
                                         </div>

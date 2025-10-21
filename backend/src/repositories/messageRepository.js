@@ -153,6 +153,8 @@ export const messageRepository = {
     },
 
     markAllAsRead: async (conversation_id, reader_id) => {
+        // Find all unread messages in the conversation where the reader is not the sender
+        // AND where no read receipt exists for this reader
         const unreadMessages = await prisma.message.findMany({
             where: {
                 conversation_id,
@@ -171,32 +173,36 @@ export const messageRepository = {
         const readReceipts = [];
         const now = new Date();
 
+        // Only create read receipts for messages that don't already have them
         for (const message of unreadMessages) {
-            const receipt = await prisma.readReceipt.upsert({
-                where: {
-                    message_id_reader_id: {
+            try {
+                const receipt = await prisma.readReceipt.create({
+                    data: {
                         message_id: message.id,
                         reader_id: reader_id,
+                        read_at: now,
                     },
-                },
-                update: {
-                    read_at: now,
-                },
-                create: {
-                    message_id: message.id,
-                    reader_id: reader_id,
-                    read_at: now,
-                },
-                include: {
-                    reader: {
-                        select: {
-                            id: true,
-                            full_name: true,
+                    include: {
+                        reader: {
+                            select: {
+                                id: true,
+                                full_name: true,
+                            },
                         },
                     },
-                },
-            });
-            readReceipts.push(receipt);
+                });
+                readReceipts.push(receipt);
+            } catch (error) {
+                // If receipt already exists (shouldn't happen due to our query filter), skip it
+                if (error.code === "P2002") {
+                    // Unique constraint violation
+                    console.log(
+                        `Read receipt already exists for message ${message.id} and reader ${reader_id}`
+                    );
+                    continue;
+                }
+                throw error;
+            }
         }
 
         return {

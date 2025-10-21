@@ -8,8 +8,8 @@ import Avatar from '@/components/ui/Avatar';
 import {getOtherUser, getConversationPreview} from '@/utils/chatUtils';
 import {formatConversationTime, getUnreadBadge} from '@/utils/conversationDisplayUtils';
 
-const ConversationList = () => {
-    const {conversationsList, setCurrentConversation, currentConversationId, hasLoadedConversations, loadConversations} = useConversationStore();
+const ConversationList = ({onConversationClick}) => {
+    const {conversationsList, setCurrentConversation, currentConversationId, hasLoadedConversations, loadConversations, markConversationAsRead} = useConversationStore();
     const {user} = useAuthStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -62,6 +62,23 @@ const ConversationList = () => {
         willShowUnreadDot: c.has_unread_messages
     })));
 
+    const handleConversationClick = async (conversation) => {
+        console.log("🖱️ Clicked conversation:", conversation.id);
+
+        // Set current conversation first
+        setCurrentConversation(conversation.id);
+
+        // Mark conversation as read if it has unread messages
+        if (conversation.has_unread_messages || conversation.unread_count > 0) {
+            await markConversationAsRead(conversation.id);
+        }
+
+        // Call the parent click handler (for navigation)
+        if (onConversationClick) {
+            onConversationClick(conversation);
+        }
+    };
+
     if (isLoading) {
         return (
             <div className="flex-1 flex items-center justify-center">
@@ -72,8 +89,6 @@ const ConversationList = () => {
 
     return (
         <div className="flex-1 flex flex-col">
-            {/* REMOVED: Search bar and header section since it's duplicated in Sidebar */}
-
             <div className="flex-1 overflow-y-auto">
                 {filteredConversations.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
@@ -112,10 +127,7 @@ const ConversationList = () => {
                                             ? 'bg-blue-50 dark:bg-blue-950/20 border-l-2 border-l-primary'
                                             : 'hover:bg-accent/50'
                                         }`}
-                                    onClick={() => {
-                                        console.log("🖱️ Clicked conversation:", conversation.id);
-                                        setCurrentConversation(conversation.id);
-                                    }}
+                                    onClick={() => handleConversationClick(conversation)}
                                 >
                                     <div className="flex items-start gap-3">
                                         <div className="relative">

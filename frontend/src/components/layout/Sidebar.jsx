@@ -6,7 +6,7 @@ import {X, MessageSquare, Users, Search, Loader2} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
 import {useState, useEffect} from 'react';
 import Avatar from '@/components/ui/Avatar';
-import ConversationList from '@/components/chat/ConversationList'; // Add this import
+import ConversationList from '@/components/chat/ConversationList';
 
 const Sidebar = ({isOpen, onClose}) => {
     const {
@@ -78,6 +78,9 @@ const Sidebar = ({isOpen, onClose}) => {
             setActiveView('conversations');
             setSearchQuery('');
             clearSearch();
+
+            // Navigate to chat page
+            navigate('/chat');
             onClose();
         } catch (error) {
             console.error('Failed to create conversation:', error);
@@ -94,6 +97,20 @@ const Sidebar = ({isOpen, onClose}) => {
         } else {
             clearSearch();
         }
+    };
+
+    // Add this function to handle conversation click from ConversationList
+    const handleConversationClick = (conversation) => {
+        console.log("🔄 Sidebar - Conversation clicked:", conversation.id);
+
+        // Set the current conversation
+        setCurrentConversation(conversation.id);
+
+        // Navigate to chat page
+        navigate('/chat');
+
+        // Close sidebar on mobile
+        onClose();
     };
 
     const getOtherUser = (conversation) => {
@@ -120,7 +137,12 @@ const Sidebar = ({isOpen, onClose}) => {
     const renderContent = () => {
         if (activeView === 'conversations') {
             // Use the ConversationList component for conversations view
-            return <ConversationList />;
+            return (
+                <ConversationList
+                    // Pass the click handler to ConversationList
+                    onConversationClick={handleConversationClick}
+                />
+            );
         } else {
             if (usersLoading && displayUsers.length === 0) {
                 return (
