@@ -1,9 +1,7 @@
 import {useEffect, useState} from 'react';
 import {useConversationStore} from '@/stores/conversationStore';
 import {useAuthStore} from '@/stores/authStore';
-import {Button} from '@/components/ui/button';
-import {Input} from '@/components/ui/input';
-import {Search, MessageSquare, Users} from 'lucide-react';
+import {MessageSquare} from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import {getOtherUser, getConversationPreview} from '@/utils/chatUtils';
 import {formatConversationTime, getUnreadBadge} from '@/utils/conversationDisplayUtils';

@@ -198,55 +198,45 @@ export const useConversationStore = create((set, get) => ({
                 has_unread_messages,
             });
 
-            // Update local state with backend response
-            set((state) => {
-                const existingConversation =
-                    state.conversations.get(conversationId);
-                if (!existingConversation) return state;
-
-                const updatedConversation = {
-                    ...existingConversation,
-                    unread_count,
-                    has_unread_messages,
-                };
-
-                const newConversations = new Map(state.conversations);
-                newConversations.set(conversationId, updatedConversation);
-
-                const conversationsList = state.conversationsList.map((conv) =>
-                    conv.id === conversationId ? updatedConversation : conv
-                );
-
-                return {
-                    conversations: newConversations,
-                    conversationsList,
-                };
-            });
+            // RELOAD CONVERSATIONS TO GET UPDATED STATE FROM BACKEND
+            await get().loadConversations();
         } catch (error) {
             console.error("Failed to mark conversation as read:", error);
-            // Even if backend fails, we can update UI optimistically
-            set((state) => {
-                const conversation = state.conversations.get(conversationId);
-                if (!conversation) return state;
 
-                const updatedConversation = {
-                    ...conversation,
-                    unread_count: 0,
-                    has_unread_messages: false,
-                };
+            // Even if backend fails, try to reload conversations to get current state
+            try {
+                await get().loadConversations();
+            } catch (reloadError) {
+                console.error("Failed to reload conversations:", reloadError);
 
-                const newConversations = new Map(state.conversations);
-                newConversations.set(conversationId, updatedConversation);
+                // Fallback: update UI optimistically
+                set((state) => {
+                    const conversation =
+                        state.conversations.get(conversationId);
+                    if (!conversation) return state;
 
-                const conversationsList = state.conversationsList.map((conv) =>
-                    conv.id === conversationId ? updatedConversation : conv
-                );
+                    const updatedConversation = {
+                        ...conversation,
+                        unread_count: 0,
+                        has_unread_messages: false,
+                    };
 
-                return {
-                    conversations: newConversations,
-                    conversationsList,
-                };
-            });
+                    const newConversations = new Map(state.conversations);
+                    newConversations.set(conversationId, updatedConversation);
+
+                    const conversationsList = state.conversationsList.map(
+                        (conv) =>
+                            conv.id === conversationId
+                                ? updatedConversation
+                                : conv
+                    );
+
+                    return {
+                        conversations: newConversations,
+                        conversationsList,
+                    };
+                });
+            }
         }
     },
 

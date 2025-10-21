@@ -118,28 +118,12 @@ const Sidebar = ({isOpen, onClose}) => {
         return conversation.user1.id === user?.id ? conversation.user2 : conversation.user1;
     };
 
-    const getLastMessagePreview = (conversation) => {
-        if (!conversation.last_message) return 'No messages yet';
-
-        const isCurrentUser = conversation.last_message.sender_id === user?.id;
-        const prefix = isCurrentUser ? 'You: ' : '';
-
-        if (conversation.last_message.message_type === 'IMAGE') {
-            return `${prefix}Image`;
-        }
-
-        const text = conversation.last_message.message_text || 'Message';
-        return `${prefix}${text.length > 30 ? text.substring(0, 30) + '...' : text}`;
-    };
-
     const displayUsers = searchQuery ? searchedUsers : users;
 
     const renderContent = () => {
         if (activeView === 'conversations') {
-            // Use the ConversationList component for conversations view
             return (
                 <ConversationList
-                    // Pass the click handler to ConversationList
                     onConversationClick={handleConversationClick}
                 />
             );
