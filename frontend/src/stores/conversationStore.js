@@ -32,25 +32,42 @@ export const useConversationStore = create((set, get) => ({
 
         set({ isLoading: true, error: null });
         try {
+            console.log("🔄 Loading conversations from API...");
             const response = await chatService.getConversations();
             const conversations = response.data.data.conversations;
+            console.log("✅ Raw conversations from API:", conversations);
 
             const userStr = localStorage.getItem("user");
             const currentUserId = userStr ? JSON.parse(userStr).id : null;
+            console.log("👤 Current user ID:", currentUserId);
 
             const processedConversations = processConversations(
                 conversations,
                 currentUserId
             );
+            console.log("🔄 Processed conversations:", processedConversations);
+
             const sortedConversations = sortConversations(
                 processedConversations
             );
+            console.log("🔄 Sorted conversations:", sortedConversations);
 
             set((state) => {
                 const newConversations = new Map(state.conversations);
 
                 sortedConversations.forEach((conv) => {
                     newConversations.set(conv.id, conv);
+                });
+
+                console.log("✅ Final conversations state:", {
+                    count: sortedConversations.length,
+                    conversations: sortedConversations.map((c) => ({
+                        id: c.id,
+                        otherUser: getOtherUser(c, currentUserId)?.full_name,
+                        unread_count: c.unread_count,
+                        has_unread_messages: c.has_unread_messages,
+                        last_message: c.last_message,
+                    })),
                 });
 
                 return {
@@ -63,7 +80,7 @@ export const useConversationStore = create((set, get) => ({
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load conversations";
-            console.error("Failed to load conversations:", error);
+            console.error("❌ Failed to load conversations:", error);
             set({
                 isLoading: false,
                 error: errorMessage,
@@ -75,8 +92,10 @@ export const useConversationStore = create((set, get) => ({
     createConversation: async (user2Id) => {
         set({ isLoading: true, error: null });
         try {
+            console.log("🔄 Creating conversation with user:", user2Id);
             const response = await chatService.createConversation(user2Id);
             const conversation = response.data.data.conversation;
+            console.log("✅ Conversation created:", conversation);
 
             const userStr = localStorage.getItem("user");
             const currentUserId = userStr ? JSON.parse(userStr).id : null;
@@ -87,6 +106,11 @@ export const useConversationStore = create((set, get) => ({
                 has_unread_messages: false,
                 last_message: getProperLastMessage(conversation),
             };
+
+            console.log(
+                "🔄 Processed new conversation:",
+                processedConversation
+            );
 
             set((state) => {
                 const newConversations = new Map(state.conversations);
@@ -126,6 +150,10 @@ export const useConversationStore = create((set, get) => ({
         }
 
         const conversations = get().conversationsList;
+        console.log(
+            "🔄 Checking existing conversations:",
+            conversations.length
+        );
 
         const existingConversation = conversations.find(
             (conv) =>
@@ -134,19 +162,31 @@ export const useConversationStore = create((set, get) => ({
                 (conv.user1.id === user2Id && conv.user2.id === currentUserId)
         );
 
+        console.log("🔄 Existing conversation found:", existingConversation);
+
         if (existingConversation) {
+            console.log(
+                "✅ Using existing conversation:",
+                existingConversation.id
+            );
             set({ currentConversationId: existingConversation.id });
             return existingConversation;
         }
 
+        console.log("🔄 No existing conversation, creating new one...");
         return await get().createConversation(user2Id);
     },
 
     setCurrentConversation: (conversationId) => {
+        console.log("🔄 Setting current conversation:", conversationId);
         set({ currentConversationId: conversationId });
     },
 
     updateConversationLastMessage: (conversationId, lastMessage) => {
+        console.log("🔄 Updating conversation last message:", {
+            conversationId,
+            lastMessage,
+        });
         set((state) => {
             const conversation = state.conversations.get(conversationId);
             if (!conversation) return state;
@@ -173,6 +213,7 @@ export const useConversationStore = create((set, get) => ({
     },
 
     markConversationAsRead: (conversationId) => {
+        console.log("🔄 Marking conversation as read:", conversationId);
         set((state) => {
             const conversation = state.conversations.get(conversationId);
             if (!conversation) return state;
@@ -201,6 +242,12 @@ export const useConversationStore = create((set, get) => ({
         const userStr = localStorage.getItem("user");
         const currentUserId = userStr ? JSON.parse(userStr).id : null;
 
+        console.log("🔄 Updating conversation on new message:", {
+            conversationId,
+            message,
+            currentUserId,
+        });
+
         set((state) => {
             const conversation = state.conversations.get(conversationId);
             if (!conversation) return state;
@@ -215,6 +262,12 @@ export const useConversationStore = create((set, get) => ({
             const newUnreadCount = isUnread
                 ? currentUnreadCount + 1
                 : currentUnreadCount;
+
+            console.log("🔄 Message unread status:", {
+                isUnread,
+                currentUnreadCount,
+                newUnreadCount,
+            });
 
             const updatedConversation = {
                 ...conversation,
@@ -244,11 +297,21 @@ export const useConversationStore = create((set, get) => ({
 
     getCurrentConversation: () => {
         const state = get();
-        return state.conversations.get(state.currentConversationId);
+        const conversation = state.conversations.get(
+            state.currentConversationId
+        );
+        console.log("🔄 Getting current conversation:", conversation);
+        return conversation;
     },
 
-    getConversationById: (conversationId) =>
-        get().conversations.get(conversationId),
+    getConversationById: (conversationId) => {
+        const conversation = get().conversations.get(conversationId);
+        console.log("🔄 Getting conversation by ID:", {
+            conversationId,
+            conversation,
+        });
+        return conversation;
+    },
 
     getCurrentOtherUser: () => {
         const state = get();
@@ -260,16 +323,19 @@ export const useConversationStore = create((set, get) => ({
 
         try {
             const currentUser = JSON.parse(userStr);
-            return conversation
+            const otherUser = conversation
                 ? getOtherUser(conversation, currentUser.id)
                 : null;
+            console.log("🔄 Getting current other user:", otherUser);
+            return otherUser;
         } catch (error) {
             console.error("Failed to parse user from localStorage:", error);
             return null;
         }
     },
 
-    resetStore: () =>
+    resetStore: () => {
+        console.log("🔄 Resetting conversation store");
         set({
             conversations: new Map(),
             conversationsList: [],
@@ -277,5 +343,6 @@ export const useConversationStore = create((set, get) => ({
             isLoading: false,
             error: null,
             hasLoadedConversations: false,
-        }),
+        });
+    },
 }));

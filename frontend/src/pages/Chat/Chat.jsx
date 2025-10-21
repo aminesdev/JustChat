@@ -61,12 +61,12 @@ const Chat = () => {
                                 </div>
                                 <h3 className="text-lg font-semibold mb-2">Welcome to JustChat</h3>
                                 <p className="text-muted-foreground mb-4">
-                                    Select a conversation or start a new chat with another user
+                                    Select a conversation from the sidebar to start chatting
                                 </p>
                                 <div className="text-sm text-muted-foreground space-y-1">
-                                    <p>• Click "Users" to browse all app users</p>
-                                    <p>• Click on a user to start a conversation</p>
-                                    <p>• Use "Messages" to view your existing chats</p>
+                                    <p>• Click "Messages" in the sidebar to view conversations</p>
+                                    <p>• Click "Users" to find people to chat with</p>
+                                    <p>• Unread messages are highlighted with badges</p>
                                 </div>
                             </CardContent>
                         </Card>

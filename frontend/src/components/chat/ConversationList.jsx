@@ -14,8 +14,23 @@ const ConversationList = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
+    console.log("🔄 ConversationList render - FULL STATE:", {
+        conversationsCount: conversationsList.length,
+        hasLoadedConversations,
+        currentConversationId,
+        user: user?.id,
+        conversationsList: conversationsList.map(c => ({
+            id: c.id,
+            otherUser: getOtherUser(c, user?.id)?.full_name,
+            unread_count: c.unread_count,
+            has_unread_messages: c.has_unread_messages,
+            last_message: c.last_message?.message_text
+        }))
+    });
+
     useEffect(() => {
         if (!hasLoadedConversations) {
+            console.log("🔄 Initializing conversations...");
             const initializeConversations = async () => {
                 setIsLoading(true);
                 try {
@@ -32,9 +47,20 @@ const ConversationList = () => {
 
     const filteredConversations = conversationsList.filter(conversation => {
         const otherUser = getOtherUser(conversation, user?.id);
-        return otherUser.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        const matchesSearch = otherUser.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             otherUser.email.toLowerCase().includes(searchQuery.toLowerCase());
+
+        return matchesSearch;
     });
+
+    console.log("📊 Filtered conversations for display:", filteredConversations.map(c => ({
+        id: c.id,
+        otherUser: getOtherUser(c, user?.id)?.full_name,
+        unreadCount: c.unread_count,
+        hasUnread: c.has_unread_messages,
+        willShowUnreadBadge: c.unread_count > 0,
+        willShowUnreadDot: c.has_unread_messages
+    })));
 
     if (isLoading) {
         return (
@@ -45,25 +71,8 @@ const ConversationList = () => {
     }
 
     return (
-        <div className="flex-1 flex flex-col border-r border-border">
-            <div className="p-4 border-b border-border">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold">Messages</h2>
-                    <Button variant="ghost" size="icon">
-                        <Users className="h-4 w-4" />
-                    </Button>
-                </div>
-
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search conversations..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-10"
-                    />
-                </div>
-            </div>
+        <div className="flex-1 flex flex-col">
+            {/* REMOVED: Search bar and header section since it's duplicated in Sidebar */}
 
             <div className="flex-1 overflow-y-auto">
                 {filteredConversations.length === 0 ? (
@@ -82,17 +91,31 @@ const ConversationList = () => {
                             const otherUser = getOtherUser(conversation, user?.id);
                             const isActive = conversation.id === currentConversationId;
                             const hasUnread = conversation.has_unread_messages;
+                            const unreadCount = conversation.unread_count;
+
+                            console.log("🎯 RENDERING Conversation Item:", {
+                                id: conversation.id,
+                                otherUser: otherUser.full_name,
+                                isActive,
+                                hasUnread,
+                                unreadCount,
+                                willShowBadge: unreadCount > 0,
+                                willShowDot: hasUnread
+                            });
 
                             return (
                                 <div
                                     key={conversation.id}
                                     className={`p-4 cursor-pointer transition-colors ${isActive
-                                            ? 'bg-accent'
-                                            : hasUnread
-                                                ? 'bg-blue-50 dark:bg-blue-950/20 border-l-2 border-l-primary'
-                                                : 'hover:bg-accent/50'
+                                        ? 'bg-accent'
+                                        : hasUnread
+                                            ? 'bg-blue-50 dark:bg-blue-950/20 border-l-2 border-l-primary'
+                                            : 'hover:bg-accent/50'
                                         }`}
-                                    onClick={() => setCurrentConversation(conversation.id)}
+                                    onClick={() => {
+                                        console.log("🖱️ Clicked conversation:", conversation.id);
+                                        setCurrentConversation(conversation.id);
+                                    }}
                                 >
                                     <div className="flex items-start gap-3">
                                         <div className="relative">
@@ -125,8 +148,8 @@ const ConversationList = () => {
                                             </div>
 
                                             <p className={`text-sm truncate ${hasUnread
-                                                    ? 'text-foreground font-medium'
-                                                    : 'text-muted-foreground'
+                                                ? 'text-foreground font-medium'
+                                                : 'text-muted-foreground'
                                                 }`}>
                                                 {getConversationPreview(conversation, user?.id)}
                                             </p>

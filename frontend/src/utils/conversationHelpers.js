@@ -1,19 +1,51 @@
 // Helper function to calculate unread messages
 export const calculateUnreadCount = (conversation, currentUserId) => {
-    if (!conversation.messages || !currentUserId) return 0;
+    console.log("🔄 Calculating unread count:", {
+        conversationId: conversation.id,
+        currentUserId,
+        hasMessages: !!conversation.messages,
+        messagesCount: conversation.messages?.length,
+    });
 
-    return conversation.messages.filter(
-        (message) =>
-            message.sender_id !== currentUserId &&
-            !message.read_receipts?.some(
-                (receipt) => receipt.reader_id === currentUserId
-            )
-    ).length;
+    if (!conversation.messages || !currentUserId) {
+        console.log("❌ No messages or current user ID, returning 0");
+        return 0;
+    }
+
+    const unreadMessages = conversation.messages.filter((message) => {
+        const isFromOtherUser = message.sender_id !== currentUserId;
+        const isRead = message.read_receipts?.some(
+            (receipt) => receipt.reader_id === currentUserId
+        );
+        const isUnread = isFromOtherUser && !isRead;
+
+        console.log("📨 Message analysis:", {
+            messageId: message.id,
+            sender: message.sender_id,
+            isFromOtherUser,
+            isRead,
+            isUnread,
+        });
+
+        return isUnread;
+    });
+
+    console.log("✅ Unread messages count:", unreadMessages.length);
+    return unreadMessages.length;
 };
 
 // Helper function to get the proper last message
 export const getProperLastMessage = (conversation) => {
+    console.log(
+        "🔄 Getting proper last message for conversation:",
+        conversation.id
+    );
+
     if (conversation.last_message) {
+        console.log(
+            "✅ Using conversation.last_message:",
+            conversation.last_message
+        );
         return conversation.last_message;
     }
 
@@ -21,26 +53,56 @@ export const getProperLastMessage = (conversation) => {
         const sortedMessages = [...conversation.messages].sort(
             (a, b) => new Date(b.created_at) - new Date(a.created_at)
         );
-        return sortedMessages[0];
+        const lastMessage = sortedMessages[0];
+        console.log(
+            "✅ Using latest message from messages array:",
+            lastMessage
+        );
+        return lastMessage;
     }
 
+    console.log("❌ No last message found");
     return null;
 };
 
 // Process conversations for display
 export const processConversations = (conversations, currentUserId) => {
-    if (!Array.isArray(conversations)) return [];
+    console.log("🔄 Processing conversations:", {
+        inputCount: conversations.length,
+        currentUserId,
+    });
 
-    return conversations.map((conv) => {
+    if (!Array.isArray(conversations)) {
+        console.log("❌ conversations is not an array");
+        return [];
+    }
+
+    const processed = conversations.map((conv) => {
         const unreadCount = calculateUnreadCount(conv, currentUserId);
         const hasUnreadMessages = unreadCount > 0;
         const lastMessage = getProperLastMessage(conv);
 
-        return {
+        const result = {
             ...conv,
             unread_count: unreadCount,
             has_unread_messages: hasUnreadMessages,
             last_message: lastMessage,
         };
+
+        console.log("📊 Processed conversation:", {
+            id: result.id,
+            otherUser:
+                result.user1?.id === currentUserId
+                    ? result.user2?.full_name
+                    : result.user1?.full_name,
+            unreadCount: result.unread_count,
+            hasUnread: result.has_unread_messages,
+            lastMessage: result.last_message?.message_text,
+        });
+
+        return result;
     });
+
+    console.log("✅ Final processed conversations:", processed);
+    return processed;
 };

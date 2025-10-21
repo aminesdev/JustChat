@@ -59,31 +59,35 @@ import Profile from './pages/Profile/Profile';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import {useAuthStore} from './stores/authStore';
 import {useUIStore} from './stores/uiStore';
+import {useUserStore} from './stores/userStore';
 
 function App() {
     const {isAuthenticated, initialize} = useAuthStore();
+    const {loadCurrentUser} = useUserStore();
     const {theme} = useUIStore();
     const [isInitialized, setIsInitialized] = useState(false);
 
-    // Debug log to see authentication state
-    console.log('🔍 App component - isAuthenticated:', isAuthenticated);
+    console.log('App component - isAuthenticated:', isAuthenticated);
 
-    // Initialize auth and theme on app load - RUN ONLY ONCE
     useEffect(() => {
         const initApp = async () => {
             await initialize();
+
+            if (isAuthenticated) {
+                console.log('App - User is authenticated, loading profile data...');
+                await loadCurrentUser();
+            }
+
             setIsInitialized(true);
         };
 
         initApp();
-    }, []); // Empty dependency array
+    }, [initialize, loadCurrentUser, isAuthenticated]);
 
-    // Apply theme class to html element
     useEffect(() => {
         document.documentElement.classList.toggle('dark', theme === 'dark');
     }, [theme]);
 
-    // Show loading until initialization is complete
     if (!isInitialized) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-background">
@@ -140,6 +144,76 @@ function App() {
 export default App;
 ```
 
+## File: components/chat/ChatHeader.jsx
+```jsx
+import {useConversationStore} from '@/stores/conversationStore';
+import {useAuthStore} from '@/stores/authStore';
+import {MoreVertical} from 'lucide-react';
+import {Button} from '@/components/ui/button';
+import Avatar from '@/components/ui/Avatar';
+
+const ChatHeader = ({conversationId}) => {
+    const {getCurrentConversation} = useConversationStore();
+    const {user} = useAuthStore();
+
+    const conversation = getCurrentConversation();
+
+    if (!conversation || !conversationId) {
+        return (
+            <div className="border-b border-border p-4">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center">
+                            <span className="text-sm font-medium text-muted-foreground">?</span>
+                        </div>
+                        <div>
+                            <h3 className="font-semibold">Select a chat</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    const getOtherUser = () => {
+        if (!conversation || !user) return null;
+        return conversation.user1.id === user.id ? conversation.user2 : conversation.user1;
+    };
+
+    const otherUser = getOtherUser();
+
+    return (
+        <div className="border-b border-border p-4">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <Avatar
+                        user={otherUser}
+                        size="md"
+                        showOnlineIndicator={true}
+                    />
+                    <div>
+                        <h3 className="font-semibold">
+                            {otherUser?.full_name || 'Unknown User'}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                            {otherUser?.is_online ? 'Online' : 'Offline'}
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon">
+                        <MoreVertical className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default ChatHeader;
+```
+
 ## File: components/chat/ConversationList.jsx
 ```jsx
 import {useEffect, useState} from 'react';
@@ -148,75 +222,63 @@ import {useAuthStore} from '@/stores/authStore';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Search, MessageSquare, Users} from 'lucide-react';
+import Avatar from '@/components/ui/Avatar';
+import {getOtherUser, getConversationPreview} from '@/utils/chatUtils';
+import {formatConversationTime, getUnreadBadge} from '@/utils/conversationDisplayUtils';
 
 const ConversationList = () => {
     const {conversationsList, setCurrentConversation, currentConversationId, hasLoadedConversations, loadConversations} = useConversationStore();
-    const {user, isAuthenticated} = useAuthStore();
+    const {user} = useAuthStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
 
-    useEffect(() => {
-        // Only load if authenticated and not already loaded
-        if (!isAuthenticated) {
-            setIsLoading(false);
-            return;
-        }
-
-        if (hasLoadedConversations) {
-            setIsLoading(false);
-            return;
-        }
-
-        const initializeConversations = async () => {
-            setIsLoading(true);
-            try {
-                await loadConversations();
-            } catch (error) {
-                console.error('Failed to load conversations:', error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        initializeConversations();
-    }, [hasLoadedConversations, isAuthenticated, loadConversations]);
-
-    const filteredConversations = conversationsList.filter(conversation => {
-        const otherUser = conversation.user1.id === user?.id ? conversation.user2 : conversation.user1;
-        return otherUser.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            otherUser.email.toLowerCase().includes(searchQuery.toLowerCase());
+    console.log("🔄 ConversationList render - FULL STATE:", {
+        conversationsCount: conversationsList.length,
+        hasLoadedConversations,
+        currentConversationId,
+        user: user?.id,
+        conversationsList: conversationsList.map(c => ({
+            id: c.id,
+            otherUser: getOtherUser(c, user?.id)?.full_name,
+            unread_count: c.unread_count,
+            has_unread_messages: c.has_unread_messages,
+            last_message: c.last_message?.message_text
+        }))
     });
 
-    const getOtherUser = (conversation) => {
-        return conversation.user1.id === user?.id ? conversation.user2 : conversation.user1;
-    };
-
-    const getLastMessagePreview = (conversation) => {
-        if (!conversation.last_message) return 'No messages yet';
-
-        const isCurrentUser = conversation.last_message.sender_id === user?.id;
-        const prefix = isCurrentUser ? 'You: ' : '';
-
-        if (conversation.last_message.message_type === 'IMAGE') {
-            return `${prefix}📷 Image`;
+    useEffect(() => {
+        if (!hasLoadedConversations) {
+            console.log("🔄 Initializing conversations...");
+            const initializeConversations = async () => {
+                setIsLoading(true);
+                try {
+                    await loadConversations();
+                } catch (error) {
+                    console.error('Failed to load conversations:', error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            initializeConversations();
         }
+    }, [hasLoadedConversations, loadConversations]);
 
-        const text = conversation.last_message.message_text || 'Message';
-        return `${prefix}${text.length > 30 ? text.substring(0, 30) + '...' : text}`;
-    };
+    const filteredConversations = conversationsList.filter(conversation => {
+        const otherUser = getOtherUser(conversation, user?.id);
+        const matchesSearch = otherUser.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            otherUser.email.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const formatTime = (timestamp) => {
-        if (!timestamp) return '';
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diffInHours = (now - date) / (1000 * 60 * 60);
+        return matchesSearch;
+    });
 
-        if (diffInHours < 24) {
-            return date.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit'});
-        } else {
-            return date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-        }
-    };
+    console.log("📊 Filtered conversations for display:", filteredConversations.map(c => ({
+        id: c.id,
+        otherUser: getOtherUser(c, user?.id)?.full_name,
+        unreadCount: c.unread_count,
+        hasUnread: c.has_unread_messages,
+        willShowUnreadBadge: c.unread_count > 0,
+        willShowUnreadDot: c.has_unread_messages
+    })));
 
     if (isLoading) {
         return (
@@ -227,8 +289,7 @@ const ConversationList = () => {
     }
 
     return (
-        <div className="flex-1 flex flex-col border-r border-border">
-            {/* Header */}
+        <div className="flex-1 flex flex-col">
             <div className="p-4 border-b border-border">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-semibold">Messages</h2>
@@ -237,7 +298,6 @@ const ConversationList = () => {
                     </Button>
                 </div>
 
-                {/* Search */}
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -249,7 +309,6 @@ const ConversationList = () => {
                 </div>
             </div>
 
-            {/* Conversations List */}
             <div className="flex-1 overflow-y-auto">
                 {filteredConversations.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
@@ -264,56 +323,71 @@ const ConversationList = () => {
                 ) : (
                     <div className="divide-y divide-border">
                         {filteredConversations.map((conversation) => {
-                            const otherUser = getOtherUser(conversation);
+                            const otherUser = getOtherUser(conversation, user?.id);
                             const isActive = conversation.id === currentConversationId;
+                            const hasUnread = conversation.has_unread_messages;
+                            const unreadCount = conversation.unread_count;
+
+                            console.log("🎯 RENDERING Conversation Item:", {
+                                id: conversation.id,
+                                otherUser: otherUser.full_name,
+                                isActive,
+                                hasUnread,
+                                unreadCount,
+                                willShowBadge: unreadCount > 0,
+                                willShowDot: hasUnread
+                            });
 
                             return (
                                 <div
                                     key={conversation.id}
                                     className={`p-4 cursor-pointer transition-colors ${isActive
-                                        ? 'bg-accent'
-                                        : 'hover:bg-accent/50'
+                                            ? 'bg-accent'
+                                            : hasUnread
+                                                ? 'bg-blue-50 dark:bg-blue-950/20 border-l-2 border-l-primary'
+                                                : 'hover:bg-accent/50'
                                         }`}
-                                    onClick={() => setCurrentConversation(conversation.id)}
+                                    onClick={() => {
+                                        console.log("🖱️ Clicked conversation:", conversation.id);
+                                        setCurrentConversation(conversation.id);
+                                    }}
                                 >
                                     <div className="flex items-start gap-3">
                                         <div className="relative">
-                                            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
-                                                <span className="text-sm font-medium text-primary">
-                                                    {otherUser.full_name.charAt(0).toUpperCase()}
-                                                </span>
-                                            </div>
-                                            {otherUser.is_online && (
-                                                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background"></div>
+                                            <Avatar
+                                                user={otherUser}
+                                                size="md"
+                                                showOnlineIndicator={true}
+                                            />
+                                            {hasUnread && (
+                                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full border-2 border-background"></div>
                                             )}
                                         </div>
 
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-start justify-between mb-1">
-                                                <p className="font-medium text-sm truncate">
-                                                    {otherUser.full_name}
-                                                </p>
-                                                {conversation.last_message && (
-                                                    <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
-                                                        {formatTime(conversation.last_message.created_at)}
-                                                    </span>
-                                                )}
+                                                <div className="flex items-center gap-2">
+                                                    <p className={`font-medium text-sm truncate ${hasUnread ? 'font-semibold text-foreground' : ''
+                                                        }`}>
+                                                        {otherUser.full_name}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {conversation.last_message && (
+                                                        <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                                                            {formatConversationTime(conversation.last_message.created_at)}
+                                                        </span>
+                                                    )}
+                                                    {getUnreadBadge(conversation)}
+                                                </div>
                                             </div>
 
-                                            <p className="text-sm text-muted-foreground truncate">
-                                                {getLastMessagePreview(conversation)}
+                                            <p className={`text-sm truncate ${hasUnread
+                                                    ? 'text-foreground font-medium'
+                                                    : 'text-muted-foreground'
+                                                }`}>
+                                                {getConversationPreview(conversation, user?.id)}
                                             </p>
-
-                                            {conversation._count?.messages > 0 && (
-                                                <div className="flex items-center justify-between mt-1">
-                                                    <div className="flex-1" />
-                                                    {conversation._count.messages > 0 && (
-                                                        <div className="bg-primary text-primary-foreground text-xs rounded-full px-2 py-1 min-w-5 h-5 flex items-center justify-center">
-                                                            {conversation._count.messages > 99 ? '99+' : conversation._count.messages}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -327,6 +401,340 @@ const ConversationList = () => {
 };
 
 export default ConversationList;
+```
+
+## File: components/chat/MessageInput.jsx
+```jsx
+import {useState, useRef} from 'react';
+import {Button} from '@/components/ui/button';
+import {Input} from '@/components/ui/input';
+import {useMessageStore} from '@/stores/messageStore';
+import {Send, Image} from 'lucide-react';
+import {uploadService} from '@/services/uploadService';
+import {validateFileUpload} from '@/utils/validationUtils';
+
+const MessageInput = ({conversationId}) => {
+    const [messageText, setMessageText] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const fileInputRef = useRef(null);
+    const {sendMessage} = useMessageStore();
+
+    const handleSendMessage = async (e) => {
+        e.preventDefault();
+
+        if (!messageText.trim() || !conversationId || isLoading) return;
+
+        const textToSend = messageText.trim();
+        setMessageText('');
+        setIsLoading(true);
+
+        try {
+            await sendMessage(conversationId, {
+                message_text: textToSend,
+                message_type: 'TEXT'
+            });
+        } catch (error) {
+            console.error('Failed to send message:', error);
+            setMessageText(textToSend);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file || !conversationId || isLoading) return;
+
+        const validationError = validateFileUpload(file);
+        if (validationError) {
+            console.error('Image validation error:', validationError);
+            return;
+        }
+
+        setIsLoading(true);
+
+        try {
+            const uploadResponse = await uploadService.uploadImage(file, 'message');
+            const imageUrl = uploadResponse.data.url;
+
+            await sendMessage(conversationId, {
+                message_text: '',
+                message_type: 'IMAGE',
+                file_url: imageUrl
+            });
+
+            fileInputRef.current.value = '';
+        } catch (error) {
+            console.error('Failed to upload and send image:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleKeyPress = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSendMessage(e);
+        }
+    };
+
+    if (!conversationId) {
+        return (
+            <div className="border-t border-border p-4">
+                <div className="flex items-center justify-center text-muted-foreground text-sm">
+                    Select a conversation to start messaging
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="border-t border-border p-4">
+            <form onSubmit={handleSendMessage} className="flex items-end gap-2">
+                <div className="flex items-center gap-2 flex-1">
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleImageUpload}
+                        accept="image/*"
+                        className="hidden"
+                    />
+
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isLoading}
+                    >
+                        <Image className="h-4 w-4" />
+                    </Button>
+
+                    <div className="flex-1 relative">
+                        <Input
+                            value={messageText}
+                            onChange={(e) => setMessageText(e.target.value)}
+                            onKeyPress={handleKeyPress}
+                            placeholder="Type a message..."
+                            disabled={isLoading}
+                            className="pr-10 resize-none"
+                        />
+                    </div>
+
+                    <Button
+                        type="submit"
+                        size="icon"
+                        disabled={!messageText.trim() || isLoading}
+                    >
+                        <Send className="h-4 w-4" />
+                    </Button>
+                </div>
+            </form>
+        </div>
+    );
+};
+
+export default MessageInput;
+```
+
+## File: components/chat/MessageList.jsx
+```jsx
+import {useEffect, useRef} from 'react';
+import {useMessageStore} from '@/stores/messageStore';
+import {useAuthStore} from '@/stores/authStore';
+import {formatMessageTime, formatDateHeader} from '@/utils/dateUtils';
+import {getAvatarUrl} from '@/utils/avatarUtils';
+import {Card} from '@/components/ui/card';
+import Avatar from '@/components/ui/Avatar';
+
+const MessageList = ({conversationId}) => {
+    const {getGroupedMessages, loadMessages, getPagination, getMessages} = useMessageStore();
+    const {user} = useAuthStore();
+    const messagesEndRef = useRef(null);
+    const messagesContainerRef = useRef(null);
+
+    const groupedMessages = getGroupedMessages(conversationId);
+    const pagination = getPagination(conversationId);
+    const messages = getMessages(conversationId);
+
+    useEffect(() => {
+        if (conversationId) {
+            loadMessages(conversationId);
+        }
+    }, [conversationId, loadMessages]);
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({behavior: 'smooth'});
+    };
+
+    const loadMoreMessages = () => {
+        if (pagination.hasMore) {
+            loadMessages(conversationId, pagination.currentPage + 1);
+        }
+    };
+
+    const isOwnMessage = (message) => message.sender_id === user?.id;
+
+    const getMessageStatus = (message) => {
+        if (message.is_optimistic) return 'sending';
+        if (message.read_receipts?.length > 0) return 'read';
+        if (message.is_delivered) return 'delivered';
+        return 'sent';
+    };
+
+    const renderMessageStatus = (message) => {
+        const status = getMessageStatus(message);
+        switch (status) {
+            case 'sending':
+                return <div className="w-3 h-3 rounded-full border-2 border-muted-foreground/30 animate-pulse" />;
+            case 'sent':
+                return '✓';
+            case 'delivered':
+                return '✓✓';
+            case 'read':
+                return <span className="text-primary">✓✓</span>;
+            default:
+                return null;
+        }
+    };
+
+    const renderMessageContent = (message) => {
+        if (message.message_type === 'IMAGE') {
+            return (
+                <div className="max-w-xs">
+                    <img
+                        src={getAvatarUrl(message.file_url)}
+                        alt="Shared image"
+                        className="rounded-lg max-w-full h-auto border border-border"
+                        onError={(e) => {
+                            e.target.style.display = 'none';
+                            const fallback = e.target.nextElementSibling;
+                            if (fallback) fallback.style.display = 'block';
+                        }}
+                    />
+                    <div className="hidden bg-muted rounded-lg p-4 text-center text-sm text-muted-foreground">
+                        Image not available
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <p className="text-sm whitespace-pre-wrap break-words">
+                {message.message_text}
+            </p>
+        );
+    };
+
+    if (!conversationId) {
+        return (
+            <div className="flex-1 flex items-center justify-center p-8">
+                <Card className="w-full max-w-md">
+                    <div className="p-6 text-center">
+                        <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                            <span className="text-lg font-medium text-muted-foreground">💬</span>
+                        </div>
+                        <h3 className="text-lg font-semibold mb-2">No conversation selected</h3>
+                        <p className="text-muted-foreground text-sm">
+                            Select a conversation or start a new chat to begin messaging
+                        </p>
+                    </div>
+                </Card>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex-1 flex flex-col">
+            <div
+                ref={messagesContainerRef}
+                className="flex-1 overflow-y-auto p-4 space-y-6"
+            >
+                {pagination.hasMore && (
+                    <div className="flex justify-center">
+                        <button
+                            onClick={loadMoreMessages}
+                            className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors border border-border rounded-md bg-background hover:bg-accent"
+                            disabled={!pagination.hasMore}
+                        >
+                            Load earlier messages
+                        </button>
+                    </div>
+                )}
+
+                {Object.keys(groupedMessages).length === 0 ? (
+                    <div className="flex items-center justify-center h-full">
+                        <div className="text-center text-muted-foreground">
+                            <p className="text-lg font-medium mb-2">No messages yet</p>
+                            <p className="text-sm">Send a message to start the conversation</p>
+                        </div>
+                    </div>
+                ) : (
+                    Object.entries(groupedMessages).map(([date, messages]) => (
+                        <div key={date} className="space-y-4">
+                            <div className="flex justify-center">
+                                <div className="px-3 py-1 bg-muted rounded-full text-xs text-muted-foreground">
+                                    {formatDateHeader(date)}
+                                </div>
+                            </div>
+
+                            {messages.map((message) => (
+                                <div
+                                    key={message.id}
+                                    className={`flex gap-3 ${isOwnMessage(message) ? 'justify-end' : 'justify-start'}`}
+                                >
+                                    {!isOwnMessage(message) && (
+                                        <div className="flex-shrink-0">
+                                            <Avatar
+                                                user={message.sender}
+                                                size="sm"
+                                                showOnlineIndicator={false}
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div className={`flex flex-col max-w-xs lg:max-w-md ${isOwnMessage(message) ? 'items-end' : 'items-start'}`}>
+                                        {!isOwnMessage(message) && (
+                                            <p className="text-xs text-muted-foreground mb-1">
+                                                {message.sender?.full_name}
+                                            </p>
+                                        )}
+
+                                        <div className={`rounded-lg px-3 py-2 ${isOwnMessage(message)
+                                                ? 'bg-primary text-primary-foreground'
+                                                : 'bg-muted'
+                                            }`}>
+                                            {renderMessageContent(message)}
+                                        </div>
+
+                                        <div className={`flex items-center gap-2 mt-1 ${isOwnMessage(message) ? 'flex-row-reverse' : 'flex-row'
+                                            }`}>
+                                            <span className="text-xs text-muted-foreground">
+                                                {formatMessageTime(message.created_at)}
+                                            </span>
+                                            {isOwnMessage(message) && (
+                                                <span className="text-xs">
+                                                    {renderMessageStatus(message)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ))
+                )}
+                <div ref={messagesEndRef} />
+            </div>
+        </div>
+    );
+};
+
+export default MessageList;
 ```
 
 ## File: components/layout/Layout.jsx
@@ -369,8 +777,8 @@ const Navbar = ({onMenuClick}) => {
         await logout();
     };
 
-    console.log("🔍 Navbar - Current user:", user);
-    console.log("🔍 Navbar - Avatar URL:", user?.avatar_url);
+    console.log("Navbar - Current user:", user);
+    console.log("Navbar - Avatar URL:", user?.avatar_url);
 
     return (
         <header className="border-b border-border bg-card/50 backdrop-blur-sm">
@@ -399,13 +807,13 @@ const Navbar = ({onMenuClick}) => {
                                     alt={user?.full_name || 'User'}
                                     className="w-8 h-8 rounded-full object-cover border border-border"
                                     onError={(e) => {
-                                        console.error('❌ Navbar - Failed to load avatar:', user?.avatar_url);
+                                        console.error('Navbar - Failed to load avatar:', user?.avatar_url);
                                         e.target.style.display = 'none';
                                         const fallback = e.target.nextElementSibling;
                                         if (fallback) fallback.style.display = 'flex';
                                     }}
                                     onLoad={(e) => {
-                                        console.log('✅ Navbar - Avatar loaded successfully');
+                                        console.log('Navbar - Avatar loaded successfully');
                                     }}
                                 />
                             ) : null}
@@ -455,7 +863,8 @@ import {Button} from '@/components/ui/button';
 import {X, MessageSquare, Users, Search, Loader2} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
 import {useState, useEffect} from 'react';
-import {getAvatarUrl} from '@/utils/avatarUtils';
+import Avatar from '@/components/ui/Avatar';
+import ConversationList from '@/components/chat/ConversationList'; // Add this import
 
 const Sidebar = ({isOpen, onClose}) => {
     const {
@@ -471,7 +880,7 @@ const Sidebar = ({isOpen, onClose}) => {
     const [activeView, setActiveView] = useState('conversations');
     const [searchQuery, setSearchQuery] = useState('');
     const [conversationsLoading, setConversationsLoading] = useState(false);
-    const [actionLoading, setActionLoading] = useState(false);
+    const [loadingUserId, setLoadingUserId] = useState(null);
 
     // Load conversations when view changes to conversations
     useEffect(() => {
@@ -490,17 +899,25 @@ const Sidebar = ({isOpen, onClose}) => {
         }
     }, [activeView, hasLoadedConversations]);
 
-    // Load users when view changes to users
+    // Load users when view changes to users - ALWAYS load fresh data
     useEffect(() => {
-        if (activeView === 'users' && users.length === 0) {
-            getAllUsers();
+        if (activeView === 'users') {
+            const loadUsers = async () => {
+                try {
+                    await getAllUsers();
+                } catch (error) {
+                    console.error('Failed to load users:', error);
+                }
+            };
+            loadUsers();
         }
-    }, [activeView, users.length, getAllUsers]);
+    }, [activeView, getAllUsers]);
 
     const handleViewChange = (view) => {
         setActiveView(view);
         setSearchQuery('');
         clearSearch();
+        setLoadingUserId(null);
     };
 
     const handleProfileClick = () => {
@@ -511,7 +928,8 @@ const Sidebar = ({isOpen, onClose}) => {
     const handleUserClick = async (selectedUser) => {
         if (selectedUser.id === user?.id) return;
 
-        setActionLoading(true);
+        setLoadingUserId(selectedUser.id);
+
         try {
             const conversation = await getOrCreateConversation(selectedUser.id);
             setCurrentConversation(conversation.id);
@@ -522,13 +940,8 @@ const Sidebar = ({isOpen, onClose}) => {
         } catch (error) {
             console.error('Failed to create conversation:', error);
         } finally {
-            setActionLoading(false);
+            setLoadingUserId(null);
         }
-    };
-
-    const handleConversationClick = (conversation) => {
-        setCurrentConversation(conversation.id);
-        onClose();
     };
 
     const handleSearch = (e) => {
@@ -553,7 +966,7 @@ const Sidebar = ({isOpen, onClose}) => {
         const prefix = isCurrentUser ? 'You: ' : '';
 
         if (conversation.last_message.message_type === 'IMAGE') {
-            return `${prefix}📷 Image`;
+            return `${prefix}Image`;
         }
 
         const text = conversation.last_message.message_text || 'Message';
@@ -564,79 +977,8 @@ const Sidebar = ({isOpen, onClose}) => {
 
     const renderContent = () => {
         if (activeView === 'conversations') {
-            if (conversationsLoading) {
-                return (
-                    <div className="flex items-center justify-center h-32">
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                );
-            }
-
-            return (
-                <div className="divide-y divide-border">
-                    {conversationsList.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-32 text-muted-foreground p-4">
-                            <MessageSquare className="h-8 w-8 mb-2 opacity-50" />
-                            <p className="text-sm text-center">No conversations yet</p>
-                            <p className="text-xs text-center mt-1">Start a chat with another user</p>
-                        </div>
-                    ) : (
-                        conversationsList.map((conversation) => {
-                            const otherUser = getOtherUser(conversation);
-                            if (!otherUser) return null;
-
-                            return (
-                                <div
-                                    key={conversation.id}
-                                    className={`p-4 cursor-pointer transition-colors ${conversation.id === currentConversationId
-                                        ? 'bg-accent'
-                                        : 'hover:bg-accent/50'
-                                        }`}
-                                    onClick={() => handleConversationClick(conversation)}
-                                >
-                                    <div className="flex items-start gap-3">
-                                        <div className="relative">
-                                            {otherUser.avatar_url ? (
-                                                <img
-                                                    src={getAvatarUrl(otherUser.avatar_url)}
-                                                    alt={otherUser.full_name}
-                                                    className="w-12 h-12 rounded-full object-cover border border-border"
-                                                    onError={(e) => {
-                                                        // Fallback to initials if image fails to load
-                                                        e.target.style.display = 'none';
-                                                        const fallback = e.target.nextElementSibling;
-                                                        if (fallback) fallback.style.display = 'flex';
-                                                    }}
-                                                />
-                                            ) : null}
-                                            <div className={`w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center border border-border ${otherUser.avatar_url ? 'hidden' : 'flex'}`}>
-                                                <span className="text-sm font-medium text-primary">
-                                                    {otherUser.full_name.charAt(0).toUpperCase()}
-                                                </span>
-                                            </div>
-                                            {otherUser.is_online && (
-                                                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background"></div>
-                                            )}
-                                        </div>
-
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <p className="font-medium text-sm truncate">
-                                                    {otherUser.full_name}
-                                                </p>
-                                            </div>
-
-                                            <p className="text-sm text-muted-foreground truncate">
-                                                {getLastMessagePreview(conversation)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })
-                    )}
-                </div>
-            );
+            // Use the ConversationList component for conversations view
+            return <ConversationList />;
         } else {
             if (usersLoading && displayUsers.length === 0) {
                 return (
@@ -663,29 +1005,11 @@ const Sidebar = ({isOpen, onClose}) => {
                                 onClick={() => handleUserClick(userItem)}
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className="relative">
-                                        {userItem.avatar_url ? (
-                                            <img
-                                                src={getAvatarUrl(userItem.avatar_url)}
-                                                alt={userItem.full_name}
-                                                className="w-12 h-12 rounded-full object-cover border border-border"
-                                                onError={(e) => {
-                                                    // Fallback to initials if image fails to load
-                                                    e.target.style.display = 'none';
-                                                    const fallback = e.target.nextElementSibling;
-                                                    if (fallback) fallback.style.display = 'flex';
-                                                }}
-                                            />
-                                        ) : null}
-                                        <div className={`w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center border border-border ${userItem.avatar_url ? 'hidden' : 'flex'}`}>
-                                            <span className="text-sm font-medium text-primary">
-                                                {userItem.full_name.charAt(0).toUpperCase()}
-                                            </span>
-                                        </div>
-                                        {userItem.is_online && (
-                                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background"></div>
-                                        )}
-                                    </div>
+                                    <Avatar
+                                        user={userItem}
+                                        size="md"
+                                        showOnlineIndicator={true}
+                                    />
 
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm truncate">
@@ -695,7 +1019,8 @@ const Sidebar = ({isOpen, onClose}) => {
                                             {userItem.email}
                                         </p>
                                     </div>
-                                    {actionLoading && (
+
+                                    {loadingUserId === userItem.id && (
                                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                     )}
                                 </div>
@@ -773,26 +1098,11 @@ const Sidebar = ({isOpen, onClose}) => {
                             onClick={handleProfileClick}
                         >
                             <div className="flex items-center gap-3 w-full">
-                                <div className="relative">
-                                    {user?.avatar_url ? (
-                                        <img
-                                            src={getAvatarUrl(user.avatar_url)}
-                                            alt={user?.full_name || 'User'}
-                                            className="w-8 h-8 rounded-full object-cover border border-border"
-                                            onError={(e) => {
-                                                // Fallback to initials if image fails to load
-                                                e.target.style.display = 'none';
-                                                const fallback = e.target.nextElementSibling;
-                                                if (fallback) fallback.style.display = 'flex';
-                                            }}
-                                        />
-                                    ) : null}
-                                    <div className={`w-8 h-8 bg-primary rounded-full flex items-center justify-center border border-border ${user?.avatar_url ? 'hidden' : 'flex'}`}>
-                                        <span className="text-xs font-medium text-primary-foreground">
-                                            {user?.full_name?.charAt(0) || 'U'}
-                                        </span>
-                                    </div>
-                                </div>
+                                <Avatar
+                                    user={user}
+                                    size="sm"
+                                    showOnlineIndicator={false}
+                                />
                                 <div className="flex-1 min-w-0 text-left">
                                     <p className="text-sm font-medium truncate">{user?.full_name}</p>
                                     <p className="text-xs text-muted-foreground truncate">View profile</p>
@@ -807,6 +1117,84 @@ const Sidebar = ({isOpen, onClose}) => {
 };
 
 export default Sidebar;
+```
+
+## File: components/ui/Avatar.jsx
+```jsx
+import {useState} from 'react';
+import {cn} from '@/lib/utils';
+import {getAvatarUrl} from '@/utils/avatarUtils';
+
+const Avatar = ({
+    user,
+    size = 'md',
+    className,
+    showOnlineIndicator = false
+}) => {
+    const [imageError, setImageError] = useState(false);
+
+    const sizeClasses = {
+        sm: 'w-8 h-8',
+        md: 'w-10 h-10',
+        lg: 'w-12 h-12',
+        xl: 'w-16 h-16',
+        '2xl': 'w-32 h-32'
+    };
+
+    const textSizes = {
+        sm: 'text-xs',
+        md: 'text-sm',
+        lg: 'text-base',
+        xl: 'text-lg',
+        '2xl': 'text-2xl'
+    };
+
+    const avatarUrl = user?.avatar_url ? getAvatarUrl(user.avatar_url) : null;
+    const initials = user?.full_name?.charAt(0)?.toUpperCase() || 'U';
+
+    const handleImageError = () => {
+        console.log('Avatar image failed to load:', avatarUrl);
+        setImageError(true);
+    };
+
+    return (
+        <div className={cn('relative', className)}>
+            {avatarUrl && !imageError ? (
+                <>
+                    <img
+                        src={avatarUrl}
+                        alt={user?.full_name || 'User avatar'}
+                        className={cn(
+                            'rounded-full object-cover border border-border',
+                            sizeClasses[size]
+                        )}
+                        onError={handleImageError}
+                        onLoad={() => {
+                            console.log('Avatar image loaded successfully:', avatarUrl);
+                            setImageError(false);
+                        }}
+                    />
+                    {showOnlineIndicator && user?.is_online && (
+                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background"></div>
+                    )}
+                </>
+            ) : (
+                <div
+                    className={cn(
+                        'bg-primary rounded-full flex items-center justify-center border border-border',
+                        sizeClasses[size]
+                    )}
+                >
+                    <span className={cn('font-medium text-primary-foreground', textSizes[size])}>
+                        {initials}
+                    </span>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default Avatar;
 ```
 
 ## File: components/ui/button.jsx
@@ -1935,6 +2323,9 @@ import Layout from '@/components/layout/Layout';
 import ChatSkeleton from '@/components/ui/skeleton/ChatSkeleton';
 import {useConversationStore} from '@/stores/conversationStore';
 import {useAuthStore} from '@/stores/authStore';
+import MessageList from '@/components/chat/MessageList';
+import MessageInput from '@/components/chat/MessageInput';
+import ChatHeader from '@/components/chat/ChatHeader';
 import {Card, CardContent} from '@/components/ui/card';
 import {MessageSquare} from 'lucide-react';
 
@@ -1945,7 +2336,6 @@ const Chat = () => {
     const currentConversation = getCurrentConversation();
 
     useEffect(() => {
-        // Only load if authenticated and not already loaded
         if (!isAuthenticated) {
             setIsLoading(false);
             return;
@@ -1969,16 +2359,6 @@ const Chat = () => {
         initializeChat();
     }, [hasLoadedConversations, isAuthenticated, loadConversations]);
 
-    // Get the other user in the conversation
-    const getOtherUser = () => {
-        if (!currentConversation || !user) return null;
-        return currentConversation.user1.id === user.id
-            ? currentConversation.user2
-            : currentConversation.user1;
-    };
-
-    const otherUser = getOtherUser();
-
     if (isLoading) {
         return <ChatSkeleton />;
     }
@@ -1988,51 +2368,25 @@ const Chat = () => {
             <div className="flex h-full">
                 {currentConversationId ? (
                     <div className="flex-1 flex flex-col">
-                        {/* Chat Header */}
-                        <div className="border-b border-border p-4">
-                            <div className="flex items-center space-x-3">
-                                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                                    <span className="text-sm font-medium text-primary">
-                                        {otherUser?.full_name?.charAt(0).toUpperCase() || '?'}
-                                    </span>
-                                </div>
-                                <div>
-                                    <h3 className="font-semibold">
-                                        {otherUser?.full_name || 'Unknown User'}
-                                    </h3>
-                                    <p className="text-sm text-muted-foreground">
-                                        {otherUser?.is_online ? 'Online' : 'Offline'}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Messages Area - Coming Soon */}
-                        <div className="flex-1 flex items-center justify-center">
-                            <Card className="w-full max-w-md mx-4">
-                                <CardContent className="p-6 text-center">
-                                    <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                                    <h3 className="text-lg font-semibold mb-2">Chat Interface</h3>
-                                    <p className="text-muted-foreground">
-                                        Message display and real-time chat coming soon...
-                                    </p>
-                                </CardContent>
-                            </Card>
-                        </div>
+                        <ChatHeader conversationId={currentConversationId} />
+                        <MessageList conversationId={currentConversationId} />
+                        <MessageInput conversationId={currentConversationId} />
                     </div>
                 ) : (
                     <div className="flex-1 flex items-center justify-center">
                         <Card className="w-full max-w-md mx-4">
                             <CardContent className="p-6 text-center">
-                                <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                                <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <MessageSquare className="h-6 w-6 text-muted-foreground" />
+                                </div>
                                 <h3 className="text-lg font-semibold mb-2">Welcome to JustChat</h3>
                                 <p className="text-muted-foreground mb-4">
-                                    Select a conversation or start a new chat with another user
+                                    Select a conversation from the sidebar to start chatting
                                 </p>
-                                <div className="text-sm text-muted-foreground">
-                                    <p>• Click "Users" to browse all app users</p>
-                                    <p>• Click on a user to start a conversation</p>
-                                    <p>• Use "Messages" to view your existing chats</p>
+                                <div className="text-sm text-muted-foreground space-y-1">
+                                    <p>• Click "Messages" in the sidebar to view conversations</p>
+                                    <p>• Click "Users" to find people to chat with</p>
+                                    <p>• Unread messages are highlighted with badges</p>
                                 </div>
                             </CardContent>
                         </Card>
@@ -2116,10 +2470,10 @@ const Profile = () => {
 
         if (currentUser?.avatar_url) {
             const processedUrl = getAvatarUrl(currentUser.avatar_url);
-            console.log('🔄 Profile - Setting avatar preview:', processedUrl);
+            console.log('Profile - Setting avatar preview:', processedUrl);
             setAvatarPreview(processedUrl);
         } else {
-            console.log('🔄 Profile - No avatar URL available');
+            console.log('Profile - No avatar URL available, using fallback');
             setAvatarPreview('');
         }
     }, [user?.avatar_url]);
@@ -2844,20 +3198,11 @@ export const useAuthStore = create(
             error: null,
             isInitialized: false,
 
-            // Initialize auth state from localStorage
             initialize: async (force = false) => {
-                console.log("🔄 AuthStore initialize() called - START", {
-                    force,
-                });
-
-                // If forcing re-initialization, reset the state
-                if (force) {
-                    console.log("🔄 Force re-initialization requested");
-                    set({ isInitialized: false });
-                }
+                console.log("AuthStore initialize() called", { force });
 
                 if (get().isInitialized && !force) {
-                    console.log("✅ AuthStore already initialized, skipping");
+                    console.log("AuthStore already initialized, skipping");
                     return;
                 }
 
@@ -2865,13 +3210,9 @@ export const useAuthStore = create(
                 const refreshToken = localStorage.getItem("refreshToken");
                 const userStr = localStorage.getItem("user");
 
-                console.log("🔐 Auth initialization - localStorage check:", {
-                    accessToken: accessToken
-                        ? `Present (${accessToken.substring(0, 20)}...)`
-                        : "Missing",
-                    refreshToken: refreshToken
-                        ? `Present (${refreshToken.substring(0, 20)}...)`
-                        : "Missing",
+                console.log("Auth initialization - localStorage check:", {
+                    accessToken: accessToken ? "Present" : "Missing",
+                    refreshToken: refreshToken ? "Present" : "Missing",
                     userStr: userStr ? "Present" : "Missing",
                 });
 
@@ -2879,7 +3220,7 @@ export const useAuthStore = create(
                     try {
                         const user = JSON.parse(userStr);
                         console.log(
-                            "✅ Setting authenticated state with user:",
+                            "Setting authenticated state with user:",
                             user.email
                         );
 
@@ -2891,25 +3232,10 @@ export const useAuthStore = create(
                             isInitialized: true,
                         });
 
-                        console.log(
-                            "✅ Auth initialized successfully - state should be:",
-                            {
-                                isAuthenticated: true,
-                                isInitialized: true,
-                                userEmail: user.email,
-                            }
-                        );
-
-                        // Verify the state was actually set
-                        const currentState = get();
-                        console.log("✅ Current auth state after set:", {
-                            isAuthenticated: currentState.isAuthenticated,
-                            isInitialized: currentState.isInitialized,
-                            user: currentState.user?.email,
-                        });
+                        console.log("Auth initialized successfully");
                     } catch (error) {
                         console.error(
-                            "❌ Failed to parse stored user data:",
+                            "Failed to parse stored user data:",
                             error
                         );
                         localStorage.removeItem("accessToken");
@@ -2922,7 +3248,7 @@ export const useAuthStore = create(
                     }
                 } else {
                     console.log(
-                        "❌ No valid tokens found, setting unauthenticated state"
+                        "No valid tokens found, setting unauthenticated state"
                     );
                     set({
                         isInitialized: true,
@@ -2933,12 +3259,11 @@ export const useAuthStore = create(
                     });
                 }
 
-                console.log("🔄 AuthStore initialize() called - END");
+                console.log("AuthStore initialize() completed");
             },
 
-            // Reset initialization state
             resetInitialization: () => {
-                console.log("🔄 Resetting auth store initialization");
+                console.log("Resetting auth store initialization");
                 set({ isInitialized: false });
             },
 
@@ -2949,15 +3274,24 @@ export const useAuthStore = create(
                     const { user, accessToken, refreshToken } =
                         response.data.data;
 
-                    console.log("✅ Login successful - User data:", user);
+                    console.log("Login successful - User data:", user);
+
+                    // Ensure user has avatar_url field, even if null
+                    const userWithAvatar = {
+                        ...user,
+                        avatar_url: user.avatar_url || null,
+                    };
 
                     // Store user data
                     localStorage.setItem("accessToken", accessToken);
                     localStorage.setItem("refreshToken", refreshToken);
-                    localStorage.setItem("user", JSON.stringify(user));
+                    localStorage.setItem(
+                        "user",
+                        JSON.stringify(userWithAvatar)
+                    );
 
                     set({
-                        user,
+                        user: userWithAvatar,
                         accessToken,
                         refreshToken,
                         isAuthenticated: true,
@@ -2993,12 +3327,21 @@ export const useAuthStore = create(
                     const { user, accessToken, refreshToken } =
                         response.data.data;
 
+                    // Ensure user has avatar_url field
+                    const userWithAvatar = {
+                        ...user,
+                        avatar_url: user.avatar_url || null,
+                    };
+
                     localStorage.setItem("accessToken", accessToken);
                     localStorage.setItem("refreshToken", refreshToken);
-                    localStorage.setItem("user", JSON.stringify(user));
+                    localStorage.setItem(
+                        "user",
+                        JSON.stringify(userWithAvatar)
+                    );
 
                     set({
-                        user,
+                        user: userWithAvatar,
                         accessToken,
                         refreshToken,
                         isAuthenticated: true,
@@ -3026,11 +3369,35 @@ export const useAuthStore = create(
                 } catch (error) {
                     console.error("Logout API call failed:", error);
                 } finally {
+                    // Clear everything on logout
                     localStorage.removeItem("accessToken");
                     localStorage.removeItem("refreshToken");
                     localStorage.removeItem("user");
 
                     storage.clear();
+
+                    // Reset stores to clear any cached data
+                    try {
+                        // Reset stores by setting their initial state
+                        const { useConversationStore } = await import(
+                            "./conversationStore"
+                        );
+                        const { useUserStore } = await import("./userStore");
+                        const { useMessageStore } = await import(
+                            "./messageStore"
+                        );
+
+                        const conversationStore =
+                            useConversationStore.getState();
+                        const userStore = useUserStore.getState();
+
+                        if (conversationStore.resetStore)
+                            conversationStore.resetStore();
+                        if (userStore.resetStore) userStore.resetStore();
+                    } catch (storeError) {
+                        console.error("Error clearing stores:", storeError);
+                    }
+
                     set({
                         user: null,
                         accessToken: null,
@@ -3064,7 +3431,6 @@ export const useAuthStore = create(
 
             clearError: () => set({ error: null }),
 
-            // Update user data with complete user object from userStore
             updateUser: (userData) => {
                 set((state) => {
                     const updatedUser = { ...state.user, ...userData };
@@ -3073,7 +3439,6 @@ export const useAuthStore = create(
                 });
             },
 
-            // NEW: Sync user data from userStore to authStore
             syncUserData: (userData) => {
                 set((state) => {
                     const updatedUser = { ...state.user, ...userData };
@@ -3103,6 +3468,10 @@ import { create } from "zustand";
 import { chatService } from "../services/chatService";
 import { getErrorMessage } from "../utils/errorUtils";
 import { sortConversations, getOtherUser } from "../utils/chatUtils";
+import {
+    processConversations,
+    getProperLastMessage,
+} from "../utils/conversationHelpers";
 
 export const useConversationStore = create((set, get) => ({
     conversations: new Map(),
@@ -3110,13 +3479,11 @@ export const useConversationStore = create((set, get) => ({
     currentConversationId: null,
     isLoading: false,
     error: null,
-    hasLoadedConversations: false, // Add flag to prevent multiple loads
+    hasLoadedConversations: false,
 
     loadConversations: async () => {
-        // Prevent multiple simultaneous loads
         if (get().isLoading || get().hasLoadedConversations) return;
 
-        // Check if we have tokens before making the request
         const accessToken = localStorage.getItem("accessToken");
         const refreshToken = localStorage.getItem("refreshToken");
 
@@ -3131,16 +3498,42 @@ export const useConversationStore = create((set, get) => ({
 
         set({ isLoading: true, error: null });
         try {
+            console.log("🔄 Loading conversations from API...");
             const response = await chatService.getConversations();
             const conversations = response.data.data.conversations;
+            console.log("✅ Raw conversations from API:", conversations);
 
-            const sortedConversations = sortConversations(conversations);
+            const userStr = localStorage.getItem("user");
+            const currentUserId = userStr ? JSON.parse(userStr).id : null;
+            console.log("👤 Current user ID:", currentUserId);
+
+            const processedConversations = processConversations(
+                conversations,
+                currentUserId
+            );
+            console.log("🔄 Processed conversations:", processedConversations);
+
+            const sortedConversations = sortConversations(
+                processedConversations
+            );
+            console.log("🔄 Sorted conversations:", sortedConversations);
 
             set((state) => {
                 const newConversations = new Map(state.conversations);
 
                 sortedConversations.forEach((conv) => {
                     newConversations.set(conv.id, conv);
+                });
+
+                console.log("✅ Final conversations state:", {
+                    count: sortedConversations.length,
+                    conversations: sortedConversations.map((c) => ({
+                        id: c.id,
+                        otherUser: getOtherUser(c, currentUserId)?.full_name,
+                        unread_count: c.unread_count,
+                        has_unread_messages: c.has_unread_messages,
+                        last_message: c.last_message,
+                    })),
                 });
 
                 return {
@@ -3153,40 +3546,59 @@ export const useConversationStore = create((set, get) => ({
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load conversations";
-            console.error("Failed to load conversations:", error);
+            console.error("❌ Failed to load conversations:", error);
             set({
                 isLoading: false,
                 error: errorMessage,
                 hasLoadedConversations: true,
             });
-            // Don't throw error here to prevent infinite loop
         }
     },
 
     createConversation: async (user2Id) => {
         set({ isLoading: true, error: null });
         try {
+            console.log("🔄 Creating conversation with user:", user2Id);
             const response = await chatService.createConversation(user2Id);
             const conversation = response.data.data.conversation;
+            console.log("✅ Conversation created:", conversation);
+
+            const userStr = localStorage.getItem("user");
+            const currentUserId = userStr ? JSON.parse(userStr).id : null;
+
+            const processedConversation = {
+                ...conversation,
+                unread_count: 0,
+                has_unread_messages: false,
+                last_message: getProperLastMessage(conversation),
+            };
+
+            console.log(
+                "🔄 Processed new conversation:",
+                processedConversation
+            );
 
             set((state) => {
                 const newConversations = new Map(state.conversations);
-                newConversations.set(conversation.id, conversation);
+                newConversations.set(
+                    processedConversation.id,
+                    processedConversation
+                );
 
                 const conversationsList = sortConversations([
-                    conversation,
+                    processedConversation,
                     ...state.conversationsList,
                 ]);
 
                 return {
                     conversations: newConversations,
                     conversationsList,
-                    currentConversationId: conversation.id,
+                    currentConversationId: processedConversation.id,
                     isLoading: false,
                 };
             });
 
-            return conversation;
+            return processedConversation;
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to create conversation";
@@ -3196,28 +3608,51 @@ export const useConversationStore = create((set, get) => ({
     },
 
     getOrCreateConversation: async (user2Id) => {
-        // Get conversations from current state
-        const conversations = get().conversationsList;
+        const userStr = localStorage.getItem("user");
+        const currentUserId = userStr ? JSON.parse(userStr).id : null;
 
-        // Check if conversation already exists
-        const existingConversation = conversations.find(
-            (conv) => conv.user1_id === user2Id || conv.user2_id === user2Id
+        if (!currentUserId) {
+            throw new Error("User not authenticated");
+        }
+
+        const conversations = get().conversationsList;
+        console.log(
+            "🔄 Checking existing conversations:",
+            conversations.length
         );
 
+        const existingConversation = conversations.find(
+            (conv) =>
+                (conv.user1.id === currentUserId &&
+                    conv.user2.id === user2Id) ||
+                (conv.user1.id === user2Id && conv.user2.id === currentUserId)
+        );
+
+        console.log("🔄 Existing conversation found:", existingConversation);
+
         if (existingConversation) {
+            console.log(
+                "✅ Using existing conversation:",
+                existingConversation.id
+            );
             set({ currentConversationId: existingConversation.id });
             return existingConversation;
         }
 
-        // Create new conversation if it doesn't exist
+        console.log("🔄 No existing conversation, creating new one...");
         return await get().createConversation(user2Id);
     },
 
     setCurrentConversation: (conversationId) => {
+        console.log("🔄 Setting current conversation:", conversationId);
         set({ currentConversationId: conversationId });
     },
 
     updateConversationLastMessage: (conversationId, lastMessage) => {
+        console.log("🔄 Updating conversation last message:", {
+            conversationId,
+            lastMessage,
+        });
         set((state) => {
             const conversation = state.conversations.get(conversationId);
             if (!conversation) return state;
@@ -3243,37 +3678,130 @@ export const useConversationStore = create((set, get) => ({
         });
     },
 
+    markConversationAsRead: (conversationId) => {
+        console.log("🔄 Marking conversation as read:", conversationId);
+        set((state) => {
+            const conversation = state.conversations.get(conversationId);
+            if (!conversation) return state;
+
+            const updatedConversation = {
+                ...conversation,
+                unread_count: 0,
+                has_unread_messages: false,
+            };
+
+            const newConversations = new Map(state.conversations);
+            newConversations.set(conversationId, updatedConversation);
+
+            const conversationsList = state.conversationsList.map((conv) =>
+                conv.id === conversationId ? updatedConversation : conv
+            );
+
+            return {
+                conversations: newConversations,
+                conversationsList,
+            };
+        });
+    },
+
+    updateConversationOnNewMessage: (conversationId, message) => {
+        const userStr = localStorage.getItem("user");
+        const currentUserId = userStr ? JSON.parse(userStr).id : null;
+
+        console.log("🔄 Updating conversation on new message:", {
+            conversationId,
+            message,
+            currentUserId,
+        });
+
+        set((state) => {
+            const conversation = state.conversations.get(conversationId);
+            if (!conversation) return state;
+
+            const isUnread =
+                message.sender_id !== currentUserId &&
+                !message.read_receipts?.some(
+                    (receipt) => receipt.reader_id === currentUserId
+                );
+
+            const currentUnreadCount = conversation.unread_count || 0;
+            const newUnreadCount = isUnread
+                ? currentUnreadCount + 1
+                : currentUnreadCount;
+
+            console.log("🔄 Message unread status:", {
+                isUnread,
+                currentUnreadCount,
+                newUnreadCount,
+            });
+
+            const updatedConversation = {
+                ...conversation,
+                last_message: message,
+                unread_count: newUnreadCount,
+                has_unread_messages: newUnreadCount > 0,
+            };
+
+            const newConversations = new Map(state.conversations);
+            newConversations.set(conversationId, updatedConversation);
+
+            const conversationsList = sortConversations([
+                updatedConversation,
+                ...state.conversationsList.filter(
+                    (conv) => conv.id !== conversationId
+                ),
+            ]);
+
+            return {
+                conversations: newConversations,
+                conversationsList,
+            };
+        });
+    },
+
     clearError: () => set({ error: null }),
 
     getCurrentConversation: () => {
         const state = get();
-        return state.conversations.get(state.currentConversationId);
+        const conversation = state.conversations.get(
+            state.currentConversationId
+        );
+        console.log("🔄 Getting current conversation:", conversation);
+        return conversation;
     },
 
-    getConversationById: (conversationId) =>
-        get().conversations.get(conversationId),
+    getConversationById: (conversationId) => {
+        const conversation = get().conversations.get(conversationId);
+        console.log("🔄 Getting conversation by ID:", {
+            conversationId,
+            conversation,
+        });
+        return conversation;
+    },
 
     getCurrentOtherUser: () => {
         const state = get();
         const conversation = state.conversations.get(
             state.currentConversationId
         );
-        // Get current user ID from localStorage to avoid circular dependency
         const userStr = localStorage.getItem("user");
         if (!userStr) return null;
 
         try {
             const currentUser = JSON.parse(userStr);
-            return conversation
+            const otherUser = conversation
                 ? getOtherUser(conversation, currentUser.id)
                 : null;
+            console.log("🔄 Getting current other user:", otherUser);
+            return otherUser;
         } catch (error) {
             console.error("Failed to parse user from localStorage:", error);
             return null;
         }
     },
 
-    resetStore: () =>
+    resetStore: () => {
+        console.log("🔄 Resetting conversation store");
         set({
             conversations: new Map(),
             conversationsList: [],
@@ -3281,7 +3809,8 @@ export const useConversationStore = create((set, get) => ({
             isLoading: false,
             error: null,
             hasLoadedConversations: false,
-        }),
+        });
+    },
 }));
 
 ```
@@ -3293,7 +3822,7 @@ import { chatService } from "../services/chatService";
 import { useAuthStore } from "./authStore";
 import { useConversationStore } from "./conversationStore";
 import { getErrorMessage } from "../utils/errorUtils";
-import { validateMessage, sanitizeMessage } from "../utils/validationUtils";
+import { validateMessage, sanitizeMessage } from '@/utils/validationUtils';
 import { groupMessagesByDate } from "../utils/chatUtils";
 
 export const useMessageStore = create((set, get) => ({
@@ -3557,6 +4086,12 @@ export const useMessageStore = create((set, get) => ({
         const messages = get().getMessages(conversationId);
         return groupMessagesByDate(messages);
     },
+    resetStore: () =>
+        set({
+            messages: new Map(),
+            isLoading: false,
+            error: null,
+        }),
 }));
 
 ```
@@ -3658,14 +4193,11 @@ export const useUserStore = create((set, get) => ({
     hasLoadedCurrentUser: false,
 
     loadCurrentUser: async () => {
-        if (get().hasLoadedCurrentUser) {
-            return;
-        }
-
         const accessToken = localStorage.getItem("accessToken");
         const refreshToken = localStorage.getItem("refreshToken");
 
         if (!accessToken || !refreshToken) {
+            console.log("No tokens available for loading user profile");
             set({
                 error: "Authentication required",
                 hasLoadedCurrentUser: true,
@@ -3678,23 +4210,34 @@ export const useUserStore = create((set, get) => ({
             const response = await userService.getProfile();
             const user = response.data.data.user;
 
-            console.log("👤 UserStore - Loaded current user:", user);
+            console.log("UserStore - Loaded current user:", {
+                id: user.id,
+                email: user.email,
+                avatar_url: user.avatar_url,
+            });
+
+            // Ensure avatar_url is properly set (not undefined)
+            const userWithAvatar = {
+                ...user,
+                avatar_url: user.avatar_url || null,
+            };
 
             // Sync the complete user data to authStore
             const authStore = useAuthStore.getState();
-            authStore.syncUserData(user);
+            authStore.syncUserData(userWithAvatar);
 
             set({
-                currentUser: user,
-                users: [user],
+                currentUser: userWithAvatar,
+                users: [userWithAvatar],
                 isLoading: false,
                 hasLoadedCurrentUser: true,
             });
 
-            return user;
+            return userWithAvatar;
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load profile";
+            console.error("Failed to load user profile:", error);
             set({
                 isLoading: false,
                 error: errorMessage,
@@ -3703,21 +4246,30 @@ export const useUserStore = create((set, get) => ({
         }
     },
 
-    getAllUsers: async () => {
+    getAllUsers: async (limit = 50) => {
         set({ isLoading: true, error: null });
         try {
-            const response = await userService.getAllUsers();
+            const response = await userService.getAllUsers(limit);
             const users = response.data.data.users;
 
+            console.log("UserStore - Loaded all users:", users.length);
+
+            // Filter out the current user from the list
+            const currentUserId = get().currentUser?.id;
+            const otherUsers = users.filter(
+                (user) => user.id !== currentUserId
+            );
+
             set({
-                users: users,
+                users: otherUsers, // Store only other users, not current user
                 isLoading: false,
             });
 
-            return users;
+            return otherUsers;
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load users";
+            console.error("Failed to load users:", error);
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
@@ -3847,6 +4399,16 @@ export const useUserStore = create((set, get) => ({
             return { onlineUsers: newOnlineUsers };
         });
     },
+    resetStore: () =>
+        set({
+            currentUser: null,
+            users: [],
+            searchedUsers: [],
+            onlineUsers: new Set(),
+            isLoading: false,
+            error: null,
+            hasLoadedCurrentUser: false,
+        }),
 }));
 
 ```
@@ -3920,11 +4482,13 @@ export const validateAvatarFile = (file) => {
 ```js
 import { formatMessageTime } from "./dateUtils";
 
-// Sort conversations by last message time or creation time
 export const sortConversations = (conversations) => {
     if (!Array.isArray(conversations)) return [];
 
     return [...conversations].sort((a, b) => {
+        if (a.has_unread_messages && !b.has_unread_messages) return -1;
+        if (!a.has_unread_messages && b.has_unread_messages) return 1;
+
         const aTime = a.last_message?.created_at || a.created_at;
         const bTime = b.last_message?.created_at || b.created_at;
 
@@ -3934,7 +4498,6 @@ export const sortConversations = (conversations) => {
     });
 };
 
-// Get the other user in a conversation
 export const getOtherUser = (conversation, currentUserId) => {
     if (!conversation || !currentUserId) return null;
 
@@ -3945,7 +4508,6 @@ export const getOtherUser = (conversation, currentUserId) => {
     return user1.id === currentUserId ? user2 : user1;
 };
 
-// Group messages by date
 export const groupMessagesByDate = (messages) => {
     if (!Array.isArray(messages)) return {};
 
@@ -3968,14 +4530,12 @@ export const groupMessagesByDate = (messages) => {
     return groups;
 };
 
-// Check if user is online
 export const isUserOnline = (user, onlineUsers) => {
     if (!user) return false;
 
     return user.is_online === true || (onlineUsers && onlineUsers.has(user.id));
 };
 
-// Format conversation preview
 export const getConversationPreview = (conversation, currentUserId) => {
     if (!conversation) return "No messages yet";
 
@@ -3987,12 +4547,11 @@ export const getConversationPreview = (conversation, currentUserId) => {
     const prefix = isCurrentUser ? "You: " : "";
 
     if (last_message.message_type === "IMAGE") {
-        return `${prefix}📷 Image`;
+        return `${prefix}Image`;
     }
 
-    // Handle deleted messages
     if (last_message.message_text === "This message was deleted") {
-        return `${prefix}🗑️ Message deleted`;
+        return `${prefix}Message deleted`;
     }
 
     const preview = last_message.message_text || "Message";
@@ -4001,12 +4560,10 @@ export const getConversationPreview = (conversation, currentUserId) => {
     }`;
 };
 
-// Check if message is from current user
 export const isOwnMessage = (message, currentUserId) => {
     return message?.sender_id === currentUserId;
 };
 
-// Format message timestamp for display
 export const formatMessageTimestamp = (timestamp) => {
     if (!timestamp) return "";
 
@@ -4016,6 +4573,167 @@ export const formatMessageTimestamp = (timestamp) => {
         console.error("Error formatting timestamp:", error);
         return "";
     }
+};
+
+```
+
+## File: utils/conversationDisplayUtils.jsx
+```jsx
+export const formatConversationTime = (timestamp) => {
+    if (!timestamp) return "";
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffInHours = (now - date) / (1000 * 60 * 60);
+
+    if (diffInHours < 24) {
+        return date.toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    } else {
+        return date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+        });
+    }
+};
+
+export const getUnreadBadge = (conversation) => {
+    console.log("🔄 getUnreadBadge called:", {
+        conversationId: conversation.id,
+        unreadCount: conversation.unread_count,
+        hasUnreadMessages: conversation.has_unread_messages,
+        shouldShowBadge: conversation.unread_count > 0,
+    });
+
+    if (!conversation.unread_count || conversation.unread_count === 0) {
+        console.log("❌ Not showing badge - no unread messages");
+        return null;
+    }
+
+    const count = conversation.unread_count;
+    const displayCount = count > 99 ? "99+" : count;
+
+    console.log("✅ Showing badge with count:", displayCount);
+
+    return (
+        <div className="bg-primary text-primary-foreground text-xs rounded-full px-2 py-1 min-w-5 h-5 flex items-center justify-center">
+            {displayCount}
+        </div>
+    );
+};
+
+```
+
+## File: utils/conversationHelpers.js
+```js
+// Helper function to calculate unread messages
+export const calculateUnreadCount = (conversation, currentUserId) => {
+    console.log("🔄 Calculating unread count:", {
+        conversationId: conversation.id,
+        currentUserId,
+        hasMessages: !!conversation.messages,
+        messagesCount: conversation.messages?.length,
+    });
+
+    if (!conversation.messages || !currentUserId) {
+        console.log("❌ No messages or current user ID, returning 0");
+        return 0;
+    }
+
+    const unreadMessages = conversation.messages.filter((message) => {
+        const isFromOtherUser = message.sender_id !== currentUserId;
+        const isRead = message.read_receipts?.some(
+            (receipt) => receipt.reader_id === currentUserId
+        );
+        const isUnread = isFromOtherUser && !isRead;
+
+        console.log("📨 Message analysis:", {
+            messageId: message.id,
+            sender: message.sender_id,
+            isFromOtherUser,
+            isRead,
+            isUnread,
+        });
+
+        return isUnread;
+    });
+
+    console.log("✅ Unread messages count:", unreadMessages.length);
+    return unreadMessages.length;
+};
+
+// Helper function to get the proper last message
+export const getProperLastMessage = (conversation) => {
+    console.log(
+        "🔄 Getting proper last message for conversation:",
+        conversation.id
+    );
+
+    if (conversation.last_message) {
+        console.log(
+            "✅ Using conversation.last_message:",
+            conversation.last_message
+        );
+        return conversation.last_message;
+    }
+
+    if (conversation.messages && conversation.messages.length > 0) {
+        const sortedMessages = [...conversation.messages].sort(
+            (a, b) => new Date(b.created_at) - new Date(a.created_at)
+        );
+        const lastMessage = sortedMessages[0];
+        console.log(
+            "✅ Using latest message from messages array:",
+            lastMessage
+        );
+        return lastMessage;
+    }
+
+    console.log("❌ No last message found");
+    return null;
+};
+
+// Process conversations for display
+export const processConversations = (conversations, currentUserId) => {
+    console.log("🔄 Processing conversations:", {
+        inputCount: conversations.length,
+        currentUserId,
+    });
+
+    if (!Array.isArray(conversations)) {
+        console.log("❌ conversations is not an array");
+        return [];
+    }
+
+    const processed = conversations.map((conv) => {
+        const unreadCount = calculateUnreadCount(conv, currentUserId);
+        const hasUnreadMessages = unreadCount > 0;
+        const lastMessage = getProperLastMessage(conv);
+
+        const result = {
+            ...conv,
+            unread_count: unreadCount,
+            has_unread_messages: hasUnreadMessages,
+            last_message: lastMessage,
+        };
+
+        console.log("📊 Processed conversation:", {
+            id: result.id,
+            otherUser:
+                result.user1?.id === currentUserId
+                    ? result.user2?.full_name
+                    : result.user1?.full_name,
+            unreadCount: result.unread_count,
+            hasUnread: result.has_unread_messages,
+            lastMessage: result.last_message?.message_text,
+        });
+
+        return result;
+    });
+
+    console.log("✅ Final processed conversations:", processed);
+    return processed;
 };
 
 ```
@@ -4384,6 +5102,7 @@ export const tokenStorage = {
 
 ## File: utils/stringUtils.js
 ```js
+// utils/stringUtils.js
 export const truncateText = (text, maxLength = 50) => {
     if (!text || typeof text !== "string") return "";
     if (text.length <= maxLength) return text;
@@ -4400,25 +5119,6 @@ export const getInitials = (name) => {
         .join("")
         .toUpperCase()
         .substring(0, 2);
-};
-
-export const sanitizeMessage = (text) => {
-    if (!text || typeof text !== "string") return "";
-
-    return text
-        .trim()
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\n/g, "<br>");
-};
-
-export const unsanitizeMessage = (text) => {
-    if (!text || typeof text !== "string") return "";
-
-    return text
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/<br>/g, "\n");
 };
 
 export const capitalizeFirst = (text) => {
@@ -4463,7 +5163,6 @@ export const copyToClipboard = async (text) => {
 
 ## File: utils/validationUtils.js
 ```js
-// utils/validationUtils.js - COMPLETE FIX
 export const isValidEmail = (email) => {
     if (!email || typeof email !== "string") return false;
 
@@ -4525,6 +5224,27 @@ export const validateFileUpload = (file, options = {}) => {
     }
 
     return null;
+};
+
+// Add the missing sanitizeMessage function
+export const sanitizeMessage = (text) => {
+    if (!text || typeof text !== "string") return "";
+
+    return text
+        .trim()
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>");
+};
+
+// Add unsanitizeMessage if needed
+export const unsanitizeMessage = (text) => {
+    if (!text || typeof text !== "string") return "";
+
+    return text
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/<br>/g, "\n");
 };
 
 ```

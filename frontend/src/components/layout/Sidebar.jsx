@@ -6,6 +6,7 @@ import {X, MessageSquare, Users, Search, Loader2} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
 import {useState, useEffect} from 'react';
 import Avatar from '@/components/ui/Avatar';
+import ConversationList from '@/components/chat/ConversationList'; // Add this import
 
 const Sidebar = ({isOpen, onClose}) => {
     const {
@@ -21,7 +22,7 @@ const Sidebar = ({isOpen, onClose}) => {
     const [activeView, setActiveView] = useState('conversations');
     const [searchQuery, setSearchQuery] = useState('');
     const [conversationsLoading, setConversationsLoading] = useState(false);
-    const [loadingUserId, setLoadingUserId] = useState(null); // Track which user is loading
+    const [loadingUserId, setLoadingUserId] = useState(null);
 
     // Load conversations when view changes to conversations
     useEffect(() => {
@@ -58,7 +59,7 @@ const Sidebar = ({isOpen, onClose}) => {
         setActiveView(view);
         setSearchQuery('');
         clearSearch();
-        setLoadingUserId(null); // Reset loading state when changing views
+        setLoadingUserId(null);
     };
 
     const handleProfileClick = () => {
@@ -69,7 +70,7 @@ const Sidebar = ({isOpen, onClose}) => {
     const handleUserClick = async (selectedUser) => {
         if (selectedUser.id === user?.id) return;
 
-        setLoadingUserId(selectedUser.id); // Set loading for this specific user
+        setLoadingUserId(selectedUser.id);
 
         try {
             const conversation = await getOrCreateConversation(selectedUser.id);
@@ -81,13 +82,8 @@ const Sidebar = ({isOpen, onClose}) => {
         } catch (error) {
             console.error('Failed to create conversation:', error);
         } finally {
-            setLoadingUserId(null); // Clear loading state
+            setLoadingUserId(null);
         }
-    };
-
-    const handleConversationClick = (conversation) => {
-        setCurrentConversation(conversation.id);
-        onClose();
     };
 
     const handleSearch = (e) => {
@@ -123,61 +119,8 @@ const Sidebar = ({isOpen, onClose}) => {
 
     const renderContent = () => {
         if (activeView === 'conversations') {
-            if (conversationsLoading) {
-                return (
-                    <div className="flex items-center justify-center h-32">
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                );
-            }
-
-            return (
-                <div className="divide-y divide-border">
-                    {conversationsList.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-32 text-muted-foreground p-4">
-                            <MessageSquare className="h-8 w-8 mb-2 opacity-50" />
-                            <p className="text-sm text-center">No conversations yet</p>
-                            <p className="text-xs text-center mt-1">Start a chat with another user</p>
-                        </div>
-                    ) : (
-                        conversationsList.map((conversation) => {
-                            const otherUser = getOtherUser(conversation);
-                            if (!otherUser) return null;
-
-                            return (
-                                <div
-                                    key={conversation.id}
-                                    className={`p-4 cursor-pointer transition-colors ${conversation.id === currentConversationId
-                                        ? 'bg-accent'
-                                        : 'hover:bg-accent/50'
-                                        }`}
-                                    onClick={() => handleConversationClick(conversation)}
-                                >
-                                    <div className="flex items-start gap-3">
-                                        <Avatar
-                                            user={otherUser}
-                                            size="md"
-                                            showOnlineIndicator={true}
-                                        />
-
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <p className="font-medium text-sm truncate">
-                                                    {otherUser.full_name}
-                                                </p>
-                                            </div>
-
-                                            <p className="text-sm text-muted-foreground truncate">
-                                                {getLastMessagePreview(conversation)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })
-                    )}
-                </div>
-            );
+            // Use the ConversationList component for conversations view
+            return <ConversationList />;
         } else {
             if (usersLoading && displayUsers.length === 0) {
                 return (
@@ -219,7 +162,6 @@ const Sidebar = ({isOpen, onClose}) => {
                                         </p>
                                     </div>
 
-                                    {/* Show loader only for the specific user that's loading */}
                                     {loadingUserId === userItem.id && (
                                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                     )}
