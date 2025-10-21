@@ -7,6 +7,7 @@ import {
     deleteMessage,
     markAsRead,
     getUnreadCount,
+    markAllAsRead,
 } from "../controllers/messageController.js";
 import { authenticateToken } from "../middlewares/auth.js";
 import {
@@ -98,6 +99,47 @@ router.get(
     "/:conversation_id/unread-count",
     validateParams(messageValidation.conversationParams),
     getUnreadCount
+);
+
+/**
+ * @swagger
+ * /conversations/{conversation_id}/mark-all-read:
+ *   post:
+ *     summary: Mark all messages in conversation as read
+ *     tags: [Messages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/ConversationIdParam'
+ *     responses:
+ *       200:
+ *         description: All messages marked as read successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   success: true
+ *                   msg: "All messages marked as read"
+ *                   data:
+ *                     marked_count: 5
+ *                     unread_count: 0
+ *                     has_unread_messages: false
+ *                     conversation:
+ *                       id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       user1_id: "123e4567-e89b-12d3-a456-426614174000"
+ *                       user2_id: "123e4567-e89b-12d3-a456-426614174001"
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ */
+router.post(
+    "/:conversation_id/mark-all-read",
+    validateParams(messageValidation.conversationParams),
+    markAllAsRead
 );
 
 /**

@@ -157,6 +157,8 @@ export const handleMessageError = (res, error) => {
             ),
         CANNOT_MARK_OWN_MESSAGE_READ: () =>
             badRequestResponse(res, "Cannot mark your own message as read"),
+        DATABASE_ERROR: () =>
+            errorResponse(res, "Database error occurred", 500),
     };
 
     const handler = errorMap[error.message];
@@ -210,4 +212,3 @@ export const handleOAuthError = (res, error) => {
         errorResponse(res, "OAuth authentication failed");
     }
 };
-

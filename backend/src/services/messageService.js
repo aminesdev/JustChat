@@ -40,7 +40,6 @@ export const getMessagesService = async (
     page = 1,
     limit = 50
 ) => {
-    // Validate page and limit
     page = Math.max(1, parseInt(page));
     limit = Math.min(Math.max(1, parseInt(limit)), 100);
 
@@ -61,7 +60,6 @@ export const getMessagesService = async (
             limit
         );
 
-        // Only mark as delivered if there are messages from other users
         if (messages.length > 0) {
             try {
                 await messageRepository.markAsDelivered(
@@ -73,7 +71,6 @@ export const getMessagesService = async (
                     "Error marking messages as delivered:",
                     deliveryError
                 );
-                // Don't throw, continue with message retrieval
             }
         }
 
@@ -189,4 +186,36 @@ export const getUnreadCountService = async (conversation_id, user_id) => {
         console.error("Error in getUnreadCountService:", error);
         throw new Error("DATABASE_ERROR");
     }
+};
+
+export const markAllAsReadService = async (conversation_id, user_id) => {
+    const conversation = await conversationRepository.findByIdWithAccess(
+        conversation_id,
+        user_id
+    );
+
+    if (!conversation) {
+        throw new Error("CONVERSATION_NOT_FOUND_OR_ACCESS_DENIED");
+    }
+
+    const result = await messageRepository.markAllAsRead(
+        conversation_id,
+        user_id
+    );
+
+    const unreadCount = await messageRepository.getUnreadCountAfterMark(
+        conversation_id,
+        user_id
+    );
+
+    return {
+        marked_count: result.marked_count,
+        unread_count: unreadCount,
+        has_unread_messages: unreadCount > 0,
+        conversation: {
+            id: conversation_id,
+            user1_id: conversation.user1_id,
+            user2_id: conversation.user2_id,
+        },
+    };
 };

@@ -6,6 +6,7 @@ import {
     deleteMessageService,
     markAsReadService,
     getUnreadCountService,
+    markAllAsReadService,
 } from "../services/messageService.js";
 import { successResponse, createdResponse } from "../utils/responseHandler.js";
 import { handleMessageError } from "../utils/errorHandler.js";
@@ -136,6 +137,24 @@ export const getUnreadCount = async (req, res) => {
         const result = await getUnreadCountService(conversation_id, user_id);
 
         successResponse(res, "Unread count retrieved successfully", result);
+    } catch (error) {
+        handleMessageError(res, error);
+    }
+};
+
+export const markAllAsRead = async (req, res) => {
+    try {
+        const user_id = req.user.userId;
+        const { conversation_id } = req.params;
+
+        const result = await markAllAsReadService(conversation_id, user_id);
+
+        successResponse(res, "All messages marked as read", {
+            marked_count: result.marked_count,
+            unread_count: result.unread_count,
+            has_unread_messages: result.has_unread_messages,
+            conversation: result.conversation,
+        });
     } catch (error) {
         handleMessageError(res, error);
     }

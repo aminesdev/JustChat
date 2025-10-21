@@ -151,4 +151,71 @@ export const messageRepository = {
             },
         });
     },
+
+    markAllAsRead: async (conversation_id, reader_id) => {
+        const unreadMessages = await prisma.message.findMany({
+            where: {
+                conversation_id,
+                sender_id: { not: reader_id },
+                read_receipts: {
+                    none: {
+                        reader_id: reader_id,
+                    },
+                },
+            },
+            select: {
+                id: true,
+            },
+        });
+
+        const readReceipts = [];
+        const now = new Date();
+
+        for (const message of unreadMessages) {
+            const receipt = await prisma.readReceipt.upsert({
+                where: {
+                    message_id_reader_id: {
+                        message_id: message.id,
+                        reader_id: reader_id,
+                    },
+                },
+                update: {
+                    read_at: now,
+                },
+                create: {
+                    message_id: message.id,
+                    reader_id: reader_id,
+                    read_at: now,
+                },
+                include: {
+                    reader: {
+                        select: {
+                            id: true,
+                            full_name: true,
+                        },
+                    },
+                },
+            });
+            readReceipts.push(receipt);
+        }
+
+        return {
+            marked_count: unreadMessages.length,
+            read_receipts: readReceipts,
+        };
+    },
+
+    getUnreadCountAfterMark: async (conversation_id, user_id) => {
+        return await prisma.message.count({
+            where: {
+                conversation_id,
+                sender_id: { not: user_id },
+                read_receipts: {
+                    none: {
+                        reader_id: user_id,
+                    },
+                },
+            },
+        });
+    },
 };
