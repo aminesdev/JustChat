@@ -11,8 +11,8 @@ const Navbar = ({onMenuClick}) => {
         await logout();
     };
 
-    console.log("🔍 Navbar - Current user:", user);
-    console.log("🔍 Navbar - Avatar URL:", user?.avatar_url);
+    console.log("Navbar - Current user:", user);
+    console.log("Navbar - Avatar URL:", user?.avatar_url);
 
     return (
         <header className="border-b border-border bg-card/50 backdrop-blur-sm">
@@ -41,13 +41,13 @@ const Navbar = ({onMenuClick}) => {
                                     alt={user?.full_name || 'User'}
                                     className="w-8 h-8 rounded-full object-cover border border-border"
                                     onError={(e) => {
-                                        console.error('❌ Navbar - Failed to load avatar:', user?.avatar_url);
+                                        console.error('Navbar - Failed to load avatar:', user?.avatar_url);
                                         e.target.style.display = 'none';
                                         const fallback = e.target.nextElementSibling;
                                         if (fallback) fallback.style.display = 'flex';
                                     }}
                                     onLoad={(e) => {
-                                        console.log('✅ Navbar - Avatar loaded successfully');
+                                        console.log('Navbar - Avatar loaded successfully');
                                     }}
                                 />
                             ) : null}

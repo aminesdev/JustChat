@@ -65,6 +65,9 @@ function App() {
     const {theme} = useUIStore();
     const [isInitialized, setIsInitialized] = useState(false);
 
+    // Debug log to see authentication state
+    console.log('🔍 App component - isAuthenticated:', isAuthenticated);
+
     // Initialize auth and theme on app load - RUN ONLY ONCE
     useEffect(() => {
         const initApp = async () => {
@@ -1620,7 +1623,7 @@ export default Login;
 
 ## File: pages/Auth/OAuthCallback.jsx
 ```jsx
-import {useEffect} from 'react';
+import {useEffect, useRef} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {useAuthStore} from '@/stores/authStore';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
@@ -1629,35 +1632,65 @@ import {ThemeToggle} from '@/components/ui/theme-toggle';
 const OAuthCallback = () => {
     const navigate = useNavigate();
     const {initialize} = useAuthStore();
+    const hasProcessed = useRef(false); // Prevent multiple executions
 
     useEffect(() => {
+        console.log('=== OAuthCallback Component Started ===');
+
+        // Prevent multiple executions
+        if (hasProcessed.current) {
+            console.log('OAuthCallback already processed, skipping');
+            return;
+        }
+        hasProcessed.current = true;
+
+        console.log('Current URL:', window.location.href);
+
         const handleOAuthCallback = async () => {
             const urlParams = new URLSearchParams(window.location.search);
             const accessToken = urlParams.get('accessToken');
             const refreshToken = urlParams.get('refreshToken');
             const user = urlParams.get('user');
 
+            console.log('URL Parameters:', {
+                accessToken: accessToken ? `Present (${accessToken.substring(0, 20)}...)` : 'Missing',
+                refreshToken: refreshToken ? `Present (${refreshToken.substring(0, 20)}...)` : 'Missing',
+                user: user ? 'Present' : 'Missing'
+            });
+
             if (accessToken && refreshToken && user) {
                 try {
+                    console.log('Storing tokens in localStorage...');
+
                     // Store tokens and user data
                     localStorage.setItem('accessToken', accessToken);
                     localStorage.setItem('refreshToken', refreshToken);
 
                     const userData = JSON.parse(decodeURIComponent(user));
+                    console.log('User data parsed:', userData);
                     localStorage.setItem('user', JSON.stringify(userData));
 
-                    // Re-initialize the auth store
-                    await initialize();
+                    console.log('Calling initialize() from auth store with force=true...');
+                    // Re-initialize the auth store with force=true
+                    await initialize(true);
 
+                    console.log('Navigation to /chat starting...');
+                    // Clear the URL parameters to prevent re-processing
+                    window.history.replaceState({}, '', '/chat');
                     // Navigate to chat
-                    navigate('/chat');
+                    navigate('/chat', {replace: true});
+
                 } catch (error) {
-                    console.error('OAuth callback error:', error);
-                    navigate('/login?error=oauth_failed');
+                    console.error('OAuth callback processing error:', error);
+                    console.error('Error details:', error.message);
+                    window.history.replaceState({}, '', '/login');
+                    navigate('/login?error=oauth_failed', {replace: true});
                 }
             } else {
-                console.error('Missing OAuth parameters');
-                navigate('/login?error=oauth_failed');
+                console.error('Missing OAuth parameters in URL');
+                console.log('Available URL parameters:', Object.fromEntries(urlParams.entries()));
+                window.history.replaceState({}, '', '/login');
+                navigate('/login?error=oauth_failed', {replace: true});
             }
         };
 
@@ -2812,8 +2845,19 @@ export const useAuthStore = create(
             isInitialized: false,
 
             // Initialize auth state from localStorage
-            initialize: async () => {
-                if (get().isInitialized) {
+            initialize: async (force = false) => {
+                console.log("🔄 AuthStore initialize() called - START", {
+                    force,
+                });
+
+                // If forcing re-initialization, reset the state
+                if (force) {
+                    console.log("🔄 Force re-initialization requested");
+                    set({ isInitialized: false });
+                }
+
+                if (get().isInitialized && !force) {
+                    console.log("✅ AuthStore already initialized, skipping");
                     return;
                 }
 
@@ -2821,15 +2865,24 @@ export const useAuthStore = create(
                 const refreshToken = localStorage.getItem("refreshToken");
                 const userStr = localStorage.getItem("user");
 
-                console.log("🔐 Auth initialization:", {
-                    accessToken: !!accessToken,
-                    refreshToken: !!refreshToken,
-                    userStr: !!userStr,
+                console.log("🔐 Auth initialization - localStorage check:", {
+                    accessToken: accessToken
+                        ? `Present (${accessToken.substring(0, 20)}...)`
+                        : "Missing",
+                    refreshToken: refreshToken
+                        ? `Present (${refreshToken.substring(0, 20)}...)`
+                        : "Missing",
+                    userStr: userStr ? "Present" : "Missing",
                 });
 
                 if (accessToken && refreshToken && userStr) {
                     try {
                         const user = JSON.parse(userStr);
+                        console.log(
+                            "✅ Setting authenticated state with user:",
+                            user.email
+                        );
+
                         set({
                             accessToken,
                             refreshToken,
@@ -2837,7 +2890,23 @@ export const useAuthStore = create(
                             isAuthenticated: true,
                             isInitialized: true,
                         });
-                        console.log("✅ Auth initialized successfully", user);
+
+                        console.log(
+                            "✅ Auth initialized successfully - state should be:",
+                            {
+                                isAuthenticated: true,
+                                isInitialized: true,
+                                userEmail: user.email,
+                            }
+                        );
+
+                        // Verify the state was actually set
+                        const currentState = get();
+                        console.log("✅ Current auth state after set:", {
+                            isAuthenticated: currentState.isAuthenticated,
+                            isInitialized: currentState.isInitialized,
+                            user: currentState.user?.email,
+                        });
                     } catch (error) {
                         console.error(
                             "❌ Failed to parse stored user data:",
@@ -2853,7 +2922,7 @@ export const useAuthStore = create(
                     }
                 } else {
                     console.log(
-                        "❌ No valid tokens found, clearing auth state"
+                        "❌ No valid tokens found, setting unauthenticated state"
                     );
                     set({
                         isInitialized: true,
@@ -2863,6 +2932,14 @@ export const useAuthStore = create(
                         refreshToken: null,
                     });
                 }
+
+                console.log("🔄 AuthStore initialize() called - END");
+            },
+
+            // Reset initialization state
+            resetInitialization: () => {
+                console.log("🔄 Resetting auth store initialization");
+                set({ isInitialized: false });
             },
 
             login: async (credentials) => {

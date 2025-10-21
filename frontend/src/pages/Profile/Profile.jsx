@@ -66,10 +66,10 @@ const Profile = () => {
 
         if (currentUser?.avatar_url) {
             const processedUrl = getAvatarUrl(currentUser.avatar_url);
-            console.log('🔄 Profile - Setting avatar preview:', processedUrl);
+            console.log('Profile - Setting avatar preview:', processedUrl);
             setAvatarPreview(processedUrl);
         } else {
-            console.log('🔄 Profile - No avatar URL available');
+            console.log('Profile - No avatar URL available, using fallback');
             setAvatarPreview('');
         }
     }, [user?.avatar_url]);

@@ -13,14 +13,11 @@ export const useUserStore = create((set, get) => ({
     hasLoadedCurrentUser: false,
 
     loadCurrentUser: async () => {
-        if (get().hasLoadedCurrentUser) {
-            return;
-        }
-
         const accessToken = localStorage.getItem("accessToken");
         const refreshToken = localStorage.getItem("refreshToken");
 
         if (!accessToken || !refreshToken) {
+            console.log("No tokens available for loading user profile");
             set({
                 error: "Authentication required",
                 hasLoadedCurrentUser: true,
@@ -33,23 +30,34 @@ export const useUserStore = create((set, get) => ({
             const response = await userService.getProfile();
             const user = response.data.data.user;
 
-            console.log("👤 UserStore - Loaded current user:", user);
+            console.log("UserStore - Loaded current user:", {
+                id: user.id,
+                email: user.email,
+                avatar_url: user.avatar_url,
+            });
+
+            // Ensure avatar_url is properly set (not undefined)
+            const userWithAvatar = {
+                ...user,
+                avatar_url: user.avatar_url || null,
+            };
 
             // Sync the complete user data to authStore
             const authStore = useAuthStore.getState();
-            authStore.syncUserData(user);
+            authStore.syncUserData(userWithAvatar);
 
             set({
-                currentUser: user,
-                users: [user],
+                currentUser: userWithAvatar,
+                users: [userWithAvatar],
                 isLoading: false,
                 hasLoadedCurrentUser: true,
             });
 
-            return user;
+            return userWithAvatar;
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load profile";
+            console.error("Failed to load user profile:", error);
             set({
                 isLoading: false,
                 error: errorMessage,
