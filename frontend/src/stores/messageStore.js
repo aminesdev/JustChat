@@ -3,7 +3,7 @@ import { chatService } from "../services/chatService";
 import { useAuthStore } from "./authStore";
 import { useConversationStore } from "./conversationStore";
 import { getErrorMessage } from "../utils/errorUtils";
-import { validateMessage, sanitizeMessage } from "../utils/validationUtils";
+import { validateMessage, sanitizeMessage } from '@/utils/validationUtils';
 import { groupMessagesByDate } from "../utils/chatUtils";
 
 export const useMessageStore = create((set, get) => ({
@@ -267,4 +267,10 @@ export const useMessageStore = create((set, get) => ({
         const messages = get().getMessages(conversationId);
         return groupMessagesByDate(messages);
     },
+    resetStore: () =>
+        set({
+            messages: new Map(),
+            isLoading: false,
+            error: null,
+        }),
 }));

@@ -15,15 +15,8 @@ export const useAuthStore = create(
             error: null,
             isInitialized: false,
 
-            // Initialize auth state from localStorage
             initialize: async (force = false) => {
                 console.log("AuthStore initialize() called", { force });
-
-                // If forcing re-initialization, reset the state
-                if (force) {
-                    console.log("Force re-initialization requested");
-                    set({ isInitialized: false });
-                }
 
                 if (get().isInitialized && !force) {
                     console.log("AuthStore already initialized, skipping");
@@ -40,67 +33,35 @@ export const useAuthStore = create(
                     userStr: userStr ? "Present" : "Missing",
                 });
 
-                if (accessToken && refreshToken) {
+                if (accessToken && refreshToken && userStr) {
                     try {
-                        // Always load fresh user data from API
-                        console.log("Loading fresh user data from API...");
-                        const userStore = useUserStore.getState();
-                        const freshUser = await userStore.loadCurrentUser();
+                        const user = JSON.parse(userStr);
+                        console.log(
+                            "Setting authenticated state with user:",
+                            user.email
+                        );
 
-                        if (freshUser) {
-                            console.log("Fresh user data loaded:", {
-                                email: freshUser.email,
-                                avatar_url: freshUser.avatar_url,
-                            });
+                        set({
+                            accessToken,
+                            refreshToken,
+                            user,
+                            isAuthenticated: true,
+                            isInitialized: true,
+                        });
 
-                            set({
-                                user: freshUser,
-                                accessToken,
-                                refreshToken,
-                                isAuthenticated: true,
-                                isInitialized: true,
-                            });
-                        } else {
-                            throw new Error("Failed to load user data");
-                        }
+                        console.log("Auth initialized successfully");
                     } catch (error) {
                         console.error(
-                            "Failed to initialize auth with fresh data:",
+                            "Failed to parse stored user data:",
                             error
                         );
-                        // Fallback to localStorage data
-                        if (userStr) {
-                            try {
-                                const user = JSON.parse(userStr);
-                                console.log(
-                                    "Using localStorage user data as fallback"
-                                );
-                                set({
-                                    user,
-                                    accessToken,
-                                    refreshToken,
-                                    isAuthenticated: true,
-                                    isInitialized: true,
-                                });
-                            } catch (parseError) {
-                                console.error(
-                                    "Failed to parse stored user data:",
-                                    parseError
-                                );
-                                localStorage.removeItem("accessToken");
-                                localStorage.removeItem("refreshToken");
-                                localStorage.removeItem("user");
-                                set({
-                                    isInitialized: true,
-                                    isAuthenticated: false,
-                                });
-                            }
-                        } else {
-                            set({
-                                isInitialized: true,
-                                isAuthenticated: false,
-                            });
-                        }
+                        localStorage.removeItem("accessToken");
+                        localStorage.removeItem("refreshToken");
+                        localStorage.removeItem("user");
+                        set({
+                            isInitialized: true,
+                            isAuthenticated: false,
+                        });
                     }
                 } else {
                     console.log(
@@ -118,9 +79,8 @@ export const useAuthStore = create(
                 console.log("AuthStore initialize() completed");
             },
 
-            // Reset initialization state
             resetInitialization: () => {
-                console.log("🔄 Resetting auth store initialization");
+                console.log("Resetting auth store initialization");
                 set({ isInitialized: false });
             },
 
@@ -136,7 +96,7 @@ export const useAuthStore = create(
                     // Ensure user has avatar_url field, even if null
                     const userWithAvatar = {
                         ...user,
-                        avatar_url: user.avatar_url || null, // Ensure it's at least null, not undefined
+                        avatar_url: user.avatar_url || null,
                     };
 
                     // Store user data
@@ -226,11 +186,35 @@ export const useAuthStore = create(
                 } catch (error) {
                     console.error("Logout API call failed:", error);
                 } finally {
+                    // Clear everything on logout
                     localStorage.removeItem("accessToken");
                     localStorage.removeItem("refreshToken");
                     localStorage.removeItem("user");
 
                     storage.clear();
+
+                    // Reset stores to clear any cached data
+                    try {
+                        // Reset stores by setting their initial state
+                        const { useConversationStore } = await import(
+                            "./conversationStore"
+                        );
+                        const { useUserStore } = await import("./userStore");
+                        const { useMessageStore } = await import(
+                            "./messageStore"
+                        );
+
+                        const conversationStore =
+                            useConversationStore.getState();
+                        const userStore = useUserStore.getState();
+
+                        if (conversationStore.resetStore)
+                            conversationStore.resetStore();
+                        if (userStore.resetStore) userStore.resetStore();
+                    } catch (storeError) {
+                        console.error("Error clearing stores:", storeError);
+                    }
+
                     set({
                         user: null,
                         accessToken: null,
@@ -264,7 +248,6 @@ export const useAuthStore = create(
 
             clearError: () => set({ error: null }),
 
-            // Update user data with complete user object from userStore
             updateUser: (userData) => {
                 set((state) => {
                     const updatedUser = { ...state.user, ...userData };
@@ -273,7 +256,6 @@ export const useAuthStore = create(
                 });
             },
 
-            // NEW: Sync user data from userStore to authStore
             syncUserData: (userData) => {
                 set((state) => {
                     const updatedUser = { ...state.user, ...userData };

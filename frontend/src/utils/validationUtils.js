@@ -1,4 +1,3 @@
-// utils/validationUtils.js - COMPLETE FIX
 export const isValidEmail = (email) => {
     if (!email || typeof email !== "string") return false;
 
@@ -60,4 +59,25 @@ export const validateFileUpload = (file, options = {}) => {
     }
 
     return null;
+};
+
+// Add the missing sanitizeMessage function
+export const sanitizeMessage = (text) => {
+    if (!text || typeof text !== "string") return "";
+
+    return text
+        .trim()
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>");
+};
+
+// Add unsanitizeMessage if needed
+export const unsanitizeMessage = (text) => {
+    if (!text || typeof text !== "string") return "";
+
+    return text
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/<br>/g, "\n");
 };

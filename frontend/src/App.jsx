@@ -8,23 +8,20 @@ import Profile from './pages/Profile/Profile';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import {useAuthStore} from './stores/authStore';
 import {useUIStore} from './stores/uiStore';
-import {useUserStore} from './stores/userStore'; // Add this import
+import {useUserStore} from './stores/userStore';
 
 function App() {
     const {isAuthenticated, initialize} = useAuthStore();
-    const {loadCurrentUser} = useUserStore(); // Add this
+    const {loadCurrentUser} = useUserStore();
     const {theme} = useUIStore();
     const [isInitialized, setIsInitialized] = useState(false);
 
-    // Debug log to see authentication state
     console.log('App component - isAuthenticated:', isAuthenticated);
 
-    // Initialize auth and theme on app load - RUN ONLY ONCE
     useEffect(() => {
         const initApp = async () => {
             await initialize();
 
-            // Load user profile data if authenticated
             if (isAuthenticated) {
                 console.log('App - User is authenticated, loading profile data...');
                 await loadCurrentUser();
@@ -36,12 +33,10 @@ function App() {
         initApp();
     }, [initialize, loadCurrentUser, isAuthenticated]);
 
-    // Apply theme class to html element
     useEffect(() => {
         document.documentElement.classList.toggle('dark', theme === 'dark');
     }, [theme]);
 
-    // Show loading until initialization is complete
     if (!isInitialized) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-background">

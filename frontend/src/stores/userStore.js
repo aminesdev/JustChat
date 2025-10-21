@@ -66,21 +66,30 @@ export const useUserStore = create((set, get) => ({
         }
     },
 
-    getAllUsers: async () => {
+    getAllUsers: async (limit = 50) => {
         set({ isLoading: true, error: null });
         try {
-            const response = await userService.getAllUsers();
+            const response = await userService.getAllUsers(limit);
             const users = response.data.data.users;
 
+            console.log("UserStore - Loaded all users:", users.length);
+
+            // Filter out the current user from the list
+            const currentUserId = get().currentUser?.id;
+            const otherUsers = users.filter(
+                (user) => user.id !== currentUserId
+            );
+
             set({
-                users: users,
+                users: otherUsers, // Store only other users, not current user
                 isLoading: false,
             });
 
-            return users;
+            return otherUsers;
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load users";
+            console.error("Failed to load users:", error);
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
@@ -210,4 +219,14 @@ export const useUserStore = create((set, get) => ({
             return { onlineUsers: newOnlineUsers };
         });
     },
+    resetStore: () =>
+        set({
+            currentUser: null,
+            users: [],
+            searchedUsers: [],
+            onlineUsers: new Set(),
+            isLoading: false,
+            error: null,
+            hasLoadedCurrentUser: false,
+        }),
 }));

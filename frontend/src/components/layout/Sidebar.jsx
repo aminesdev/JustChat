@@ -5,7 +5,7 @@ import {Button} from '@/components/ui/button';
 import {X, MessageSquare, Users, Search, Loader2} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
 import {useState, useEffect} from 'react';
-import {getAvatarUrl} from '@/utils/avatarUtils';
+import Avatar from '@/components/ui/Avatar';
 
 const Sidebar = ({isOpen, onClose}) => {
     const {
@@ -21,7 +21,7 @@ const Sidebar = ({isOpen, onClose}) => {
     const [activeView, setActiveView] = useState('conversations');
     const [searchQuery, setSearchQuery] = useState('');
     const [conversationsLoading, setConversationsLoading] = useState(false);
-    const [actionLoading, setActionLoading] = useState(false);
+    const [loadingUserId, setLoadingUserId] = useState(null); // Track which user is loading
 
     // Load conversations when view changes to conversations
     useEffect(() => {
@@ -40,17 +40,25 @@ const Sidebar = ({isOpen, onClose}) => {
         }
     }, [activeView, hasLoadedConversations]);
 
-    // Load users when view changes to users
+    // Load users when view changes to users - ALWAYS load fresh data
     useEffect(() => {
-        if (activeView === 'users' && users.length === 0) {
-            getAllUsers();
+        if (activeView === 'users') {
+            const loadUsers = async () => {
+                try {
+                    await getAllUsers();
+                } catch (error) {
+                    console.error('Failed to load users:', error);
+                }
+            };
+            loadUsers();
         }
-    }, [activeView, users.length, getAllUsers]);
+    }, [activeView, getAllUsers]);
 
     const handleViewChange = (view) => {
         setActiveView(view);
         setSearchQuery('');
         clearSearch();
+        setLoadingUserId(null); // Reset loading state when changing views
     };
 
     const handleProfileClick = () => {
@@ -61,7 +69,8 @@ const Sidebar = ({isOpen, onClose}) => {
     const handleUserClick = async (selectedUser) => {
         if (selectedUser.id === user?.id) return;
 
-        setActionLoading(true);
+        setLoadingUserId(selectedUser.id); // Set loading for this specific user
+
         try {
             const conversation = await getOrCreateConversation(selectedUser.id);
             setCurrentConversation(conversation.id);
@@ -72,7 +81,7 @@ const Sidebar = ({isOpen, onClose}) => {
         } catch (error) {
             console.error('Failed to create conversation:', error);
         } finally {
-            setActionLoading(false);
+            setLoadingUserId(null); // Clear loading state
         }
     };
 
@@ -103,7 +112,7 @@ const Sidebar = ({isOpen, onClose}) => {
         const prefix = isCurrentUser ? 'You: ' : '';
 
         if (conversation.last_message.message_type === 'IMAGE') {
-            return `${prefix}📷 Image`;
+            return `${prefix}Image`;
         }
 
         const text = conversation.last_message.message_text || 'Message';
@@ -145,29 +154,11 @@ const Sidebar = ({isOpen, onClose}) => {
                                     onClick={() => handleConversationClick(conversation)}
                                 >
                                     <div className="flex items-start gap-3">
-                                        <div className="relative">
-                                            {otherUser.avatar_url ? (
-                                                <img
-                                                    src={getAvatarUrl(otherUser.avatar_url)}
-                                                    alt={otherUser.full_name}
-                                                    className="w-12 h-12 rounded-full object-cover border border-border"
-                                                    onError={(e) => {
-                                                        // Fallback to initials if image fails to load
-                                                        e.target.style.display = 'none';
-                                                        const fallback = e.target.nextElementSibling;
-                                                        if (fallback) fallback.style.display = 'flex';
-                                                    }}
-                                                />
-                                            ) : null}
-                                            <div className={`w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center border border-border ${otherUser.avatar_url ? 'hidden' : 'flex'}`}>
-                                                <span className="text-sm font-medium text-primary">
-                                                    {otherUser.full_name.charAt(0).toUpperCase()}
-                                                </span>
-                                            </div>
-                                            {otherUser.is_online && (
-                                                <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background"></div>
-                                            )}
-                                        </div>
+                                        <Avatar
+                                            user={otherUser}
+                                            size="md"
+                                            showOnlineIndicator={true}
+                                        />
 
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center justify-between mb-1">
@@ -213,29 +204,11 @@ const Sidebar = ({isOpen, onClose}) => {
                                 onClick={() => handleUserClick(userItem)}
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className="relative">
-                                        {userItem.avatar_url ? (
-                                            <img
-                                                src={getAvatarUrl(userItem.avatar_url)}
-                                                alt={userItem.full_name}
-                                                className="w-12 h-12 rounded-full object-cover border border-border"
-                                                onError={(e) => {
-                                                    // Fallback to initials if image fails to load
-                                                    e.target.style.display = 'none';
-                                                    const fallback = e.target.nextElementSibling;
-                                                    if (fallback) fallback.style.display = 'flex';
-                                                }}
-                                            />
-                                        ) : null}
-                                        <div className={`w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center border border-border ${userItem.avatar_url ? 'hidden' : 'flex'}`}>
-                                            <span className="text-sm font-medium text-primary">
-                                                {userItem.full_name.charAt(0).toUpperCase()}
-                                            </span>
-                                        </div>
-                                        {userItem.is_online && (
-                                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background"></div>
-                                        )}
-                                    </div>
+                                    <Avatar
+                                        user={userItem}
+                                        size="md"
+                                        showOnlineIndicator={true}
+                                    />
 
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm truncate">
@@ -245,7 +218,9 @@ const Sidebar = ({isOpen, onClose}) => {
                                             {userItem.email}
                                         </p>
                                     </div>
-                                    {actionLoading && (
+
+                                    {/* Show loader only for the specific user that's loading */}
+                                    {loadingUserId === userItem.id && (
                                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                     )}
                                 </div>
@@ -323,26 +298,11 @@ const Sidebar = ({isOpen, onClose}) => {
                             onClick={handleProfileClick}
                         >
                             <div className="flex items-center gap-3 w-full">
-                                <div className="relative">
-                                    {user?.avatar_url ? (
-                                        <img
-                                            src={getAvatarUrl(user.avatar_url)}
-                                            alt={user?.full_name || 'User'}
-                                            className="w-8 h-8 rounded-full object-cover border border-border"
-                                            onError={(e) => {
-                                                // Fallback to initials if image fails to load
-                                                e.target.style.display = 'none';
-                                                const fallback = e.target.nextElementSibling;
-                                                if (fallback) fallback.style.display = 'flex';
-                                            }}
-                                        />
-                                    ) : null}
-                                    <div className={`w-8 h-8 bg-primary rounded-full flex items-center justify-center border border-border ${user?.avatar_url ? 'hidden' : 'flex'}`}>
-                                        <span className="text-xs font-medium text-primary-foreground">
-                                            {user?.full_name?.charAt(0) || 'U'}
-                                        </span>
-                                    </div>
-                                </div>
+                                <Avatar
+                                    user={user}
+                                    size="sm"
+                                    showOnlineIndicator={false}
+                                />
                                 <div className="flex-1 min-w-0 text-left">
                                     <p className="text-sm font-medium truncate">{user?.full_name}</p>
                                     <p className="text-xs text-muted-foreground truncate">View profile</p>

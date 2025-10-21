@@ -1,3 +1,4 @@
+// utils/stringUtils.js
 export const truncateText = (text, maxLength = 50) => {
     if (!text || typeof text !== "string") return "";
     if (text.length <= maxLength) return text;
@@ -14,25 +15,6 @@ export const getInitials = (name) => {
         .join("")
         .toUpperCase()
         .substring(0, 2);
-};
-
-export const sanitizeMessage = (text) => {
-    if (!text || typeof text !== "string") return "";
-
-    return text
-        .trim()
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\n/g, "<br>");
-};
-
-export const unsanitizeMessage = (text) => {
-    if (!text || typeof text !== "string") return "";
-
-    return text
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/<br>/g, "\n");
 };
 
 export const capitalizeFirst = (text) => {
