@@ -1,7 +1,6 @@
 import prisma from "../config/database.js";
 
 export const conversationRepository = {
-
     findByParticipants: async (user1_id, user2_id) => {
         const [sortedUser1, sortedUser2] = [user1_id, user2_id].sort();
 
@@ -42,7 +41,6 @@ export const conversationRepository = {
             },
         });
     },
-
 
     findByUserId: async (user_id) => {
         return await prisma.conversation.findMany({
@@ -86,10 +84,10 @@ export const conversationRepository = {
                     select: {
                         messages: {
                             where: {
-                                sender_id: { not: user_id },
+                                sender_id: { not: user_id }, // Messages where current user is NOT sender
                                 read_receipts: {
                                     none: {
-                                        reader_id: user_id,
+                                        reader_id: user_id, // No read receipt from current user
                                     },
                                 },
                             },

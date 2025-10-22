@@ -28,7 +28,21 @@ export const createConversationService = async (user1_id, user2_id) => {
 
 export const getUserConversationsService = async (user_id) => {
     const conversations = await conversationRepository.findByUserId(user_id);
-    return conversations;
+
+    // Transform the response to include unread_count and has_unread_messages
+    const transformedConversations = conversations.map((conversation) => {
+        const unread_count = conversation._count?.messages || 0;
+
+        return {
+            ...conversation,
+            unread_count: unread_count,
+            has_unread_messages: unread_count > 0,
+            // Remove the _count field from the response
+            _count: undefined,
+        };
+    });
+
+    return transformedConversations;
 };
 
 export const getConversationService = async (conversation_id, user_id) => {

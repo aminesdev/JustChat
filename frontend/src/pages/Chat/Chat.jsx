@@ -13,6 +13,7 @@ const Chat = () => {
     const {currentConversationId, getCurrentConversation, hasLoadedConversations, loadConversations} = useConversationStore();
     const {user, isAuthenticated} = useAuthStore();
     const [isLoading, setIsLoading] = useState(true);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const currentConversation = getCurrentConversation();
 
     useEffect(() => {
@@ -39,6 +40,10 @@ const Chat = () => {
         initializeChat();
     }, [hasLoadedConversations, isAuthenticated, loadConversations]);
 
+    const handleDeleteClick = () => {
+        setShowDeleteDialog(true);
+    };
+
     if (isLoading) {
         return <ChatSkeleton />;
     }
@@ -47,9 +52,16 @@ const Chat = () => {
         <Layout>
             <div className="flex h-full">
                 {currentConversationId ? (
-                    <div className="flex-1 flex flex-col">
-                        <ChatHeader conversationId={currentConversationId} />
-                        <MessageList conversationId={currentConversationId} />
+                    <div className="flex-1 flex flex-col min-h-0"> {/* Crucial: min-h-0 for proper flexbox */}
+                        <ChatHeader
+                            conversationId={currentConversationId}
+                            onDeleteClick={handleDeleteClick}
+                        />
+                        <MessageList
+                            conversationId={currentConversationId}
+                            showDeleteDialog={showDeleteDialog}
+                            onDeleteDialogChange={setShowDeleteDialog}
+                        />
                         <MessageInput conversationId={currentConversationId} />
                     </div>
                 ) : (

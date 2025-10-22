@@ -78,8 +78,13 @@ export const processConversations = (conversations, currentUserId) => {
     }
 
     const processed = conversations.map((conv) => {
-        const unreadCount = calculateUnreadCount(conv, currentUserId);
-        const hasUnreadMessages = unreadCount > 0;
+        // Use backend-provided unread counts if available
+        const backendUnreadCount = conv.unread_count || 0;
+        const backendHasUnread = conv.has_unread_messages || false;
+
+        // Only calculate locally if backend doesn't provide the data
+        const unreadCount = backendUnreadCount >= 0 ? backendUnreadCount : calculateUnreadCount(conv, currentUserId);
+        const hasUnreadMessages = backendHasUnread !== undefined ? backendHasUnread : unreadCount > 0;
         const lastMessage = getProperLastMessage(conv);
 
         const result = {
@@ -91,18 +96,15 @@ export const processConversations = (conversations, currentUserId) => {
 
         console.log("📊 Processed conversation:", {
             id: result.id,
-            otherUser:
-                result.user1?.id === currentUserId
-                    ? result.user2?.full_name
-                    : result.user1?.full_name,
-            unreadCount: result.unread_count,
-            hasUnread: result.has_unread_messages,
-            lastMessage: result.last_message?.message_text,
+            otherUser: result.user1?.id === currentUserId ? result.user2?.full_name : result.user1?.full_name,
+            backendUnreadCount,
+            backendHasUnread,
+            finalUnreadCount: result.unread_count,
+            finalHasUnread: result.has_unread_messages,
         });
 
         return result;
     });
 
-    console.log("✅ Final processed conversations:", processed);
     return processed;
 };

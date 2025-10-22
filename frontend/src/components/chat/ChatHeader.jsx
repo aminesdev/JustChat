@@ -1,10 +1,10 @@
 import {useConversationStore} from '@/stores/conversationStore';
 import {useAuthStore} from '@/stores/authStore';
-import {MoreVertical} from 'lucide-react';
+import {MoreVertical, Trash2} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import Avatar from '@/components/ui/Avatar';
 
-const ChatHeader = ({conversationId}) => {
+const ChatHeader = ({conversationId, onDeleteClick}) => {
     const {getCurrentConversation} = useConversationStore();
     const {user} = useAuthStore();
 
@@ -54,8 +54,13 @@ const ChatHeader = ({conversationId}) => {
                 </div>
 
                 <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon">
-                        <MoreVertical className="h-4 w-4" />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={onDeleteClick}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                        <Trash2 className="h-4 w-4" />
                     </Button>
                 </div>
             </div>

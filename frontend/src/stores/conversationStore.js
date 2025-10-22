@@ -41,7 +41,20 @@ export const useConversationStore = create((set, get) => ({
             console.log("🔄 Loading conversations from API...");
             const response = await chatService.getConversations();
             const conversations = response.data.data.conversations;
-            console.log("✅ Raw conversations from API:", conversations);
+
+            // ADD DEBUG LOGGING
+            console.log(
+                "🔍 DEBUG - Raw conversations from backend:",
+                conversations.map((c) => ({
+                    id: c.id,
+                    unread_count: c.unread_count,
+                    has_unread_messages: c.has_unread_messages,
+                    otherUser:
+                        c.user1?.id === getCurrentUserId()
+                            ? c.user2?.full_name
+                            : c.user1?.full_name,
+                }))
+            );
 
             const currentUserId = getCurrentUserId();
             console.log("👤 Current user ID:", currentUserId);
@@ -50,29 +63,30 @@ export const useConversationStore = create((set, get) => ({
                 conversations,
                 currentUserId
             );
-            console.log("🔄 Processed conversations:", processedConversations);
+
+            // ADD DEBUG LOGGING FOR PROCESSED CONVERSATIONS
+            console.log(
+                "🔍 DEBUG - Processed conversations:",
+                processedConversations.map((c) => ({
+                    id: c.id,
+                    unread_count: c.unread_count,
+                    has_unread_messages: c.has_unread_messages,
+                    otherUser:
+                        c.user1?.id === currentUserId
+                            ? c.user2?.full_name
+                            : c.user1?.full_name,
+                }))
+            );
 
             const sortedConversations = sortConversations(
                 processedConversations
             );
-            console.log("🔄 Sorted conversations:", sortedConversations);
 
             set((state) => {
                 const newConversations = new Map(state.conversations);
 
                 sortedConversations.forEach((conv) => {
                     newConversations.set(conv.id, conv);
-                });
-
-                console.log("✅ Final conversations state:", {
-                    count: sortedConversations.length,
-                    conversations: sortedConversations.map((c) => ({
-                        id: c.id,
-                        otherUser: getOtherUser(c, currentUserId)?.full_name,
-                        unread_count: c.unread_count,
-                        has_unread_messages: c.has_unread_messages,
-                        last_message: c.last_message,
-                    })),
                 });
 
                 return {
@@ -185,6 +199,43 @@ export const useConversationStore = create((set, get) => ({
         set({ currentConversationId: conversationId });
     },
 
+    deleteConversation: async (conversationId) => {
+        console.log("🔄 Deleting conversation:", conversationId);
+
+        try {
+            await chatService.deleteConversation(conversationId);
+
+            // Remove conversation from local state
+            set((state) => {
+                const newConversations = new Map(state.conversations);
+                newConversations.delete(conversationId);
+
+                const conversationsList = state.conversationsList.filter(
+                    (conv) => conv.id !== conversationId
+                );
+
+                // Clear current conversation if it was the deleted one
+                const newCurrentConversationId =
+                    state.currentConversationId === conversationId
+                        ? null
+                        : state.currentConversationId;
+
+                return {
+                    conversations: newConversations,
+                    conversationsList,
+                    currentConversationId: newCurrentConversationId,
+                };
+            });
+
+            console.log("✅ Conversation deleted successfully");
+        } catch (error) {
+            const errorMessage =
+                getErrorMessage(error) || "Failed to delete conversation";
+            console.error("❌ Failed to delete conversation:", error);
+            throw new Error(errorMessage);
+        }
+    },
+
     markConversationAsRead: async (conversationId) => {
         console.log("🔄 Marking conversation as read:", conversationId);
 
@@ -198,44 +249,22 @@ export const useConversationStore = create((set, get) => ({
                 has_unread_messages,
             });
 
-            // RELOAD CONVERSATIONS TO GET UPDATED STATE FROM BACKEND
+            // Force reload conversations to get fresh data from backend
+            console.log(
+                "🔄 Forcing conversation reload after marking as read..."
+            );
             await get().loadConversations();
         } catch (error) {
             console.error("Failed to mark conversation as read:", error);
 
             // Even if backend fails, try to reload conversations to get current state
             try {
+                console.log(
+                    "🔄 Attempting to reload conversations after error..."
+                );
                 await get().loadConversations();
             } catch (reloadError) {
                 console.error("Failed to reload conversations:", reloadError);
-
-                // Fallback: update UI optimistically
-                set((state) => {
-                    const conversation =
-                        state.conversations.get(conversationId);
-                    if (!conversation) return state;
-
-                    const updatedConversation = {
-                        ...conversation,
-                        unread_count: 0,
-                        has_unread_messages: false,
-                    };
-
-                    const newConversations = new Map(state.conversations);
-                    newConversations.set(conversationId, updatedConversation);
-
-                    const conversationsList = state.conversationsList.map(
-                        (conv) =>
-                            conv.id === conversationId
-                                ? updatedConversation
-                                : conv
-                    );
-
-                    return {
-                        conversations: newConversations,
-                        conversationsList,
-                    };
-                });
             }
         }
     },
