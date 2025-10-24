@@ -73,6 +73,12 @@ export const handleCloudinaryError = (res, error) => {
             errorResponse(res, "Cloud storage configuration error", 503),
         IMAGE_PROCESSING_ERROR: () =>
             errorResponse(res, "Error processing image", 500),
+        FILE_URL_REQUIRED: () =>
+            badRequestResponse(res, "File URL is required for file messages"),
+        INVALID_MESSAGE_TYPE: () =>
+            badRequestResponse(res, "Invalid message type"),
+        TEXT_MESSAGES_CANNOT_HAVE_FILE_URL: () =>
+            badRequestResponse(res, "Text messages cannot contain file URLs"),
     };
 
     const handler = errorMap[error.message];
@@ -159,6 +165,12 @@ export const handleMessageError = (res, error) => {
             badRequestResponse(res, "Cannot mark your own message as read"),
         DATABASE_ERROR: () =>
             errorResponse(res, "Database error occurred", 500),
+        FILE_URL_REQUIRED: () =>
+            badRequestResponse(res, "File URL is required for file messages"),
+        INVALID_MESSAGE_TYPE: () =>
+            badRequestResponse(res, "Invalid message type"),
+        TEXT_MESSAGES_CANNOT_HAVE_FILE_URL: () =>
+            badRequestResponse(res, "Text messages cannot contain file URLs"),
     };
 
     const handler = errorMap[error.message];

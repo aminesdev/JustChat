@@ -3,8 +3,16 @@ import { readReceiptRepository } from "../repositories/readReceiptRepository.js"
 import { conversationRepository } from "../repositories/conversationRepository.js";
 
 export const createMessageService = async (messageData) => {
-    const { conversation_id, sender_id, message_type, message_text, file_url } =
-        messageData;
+    const {
+        conversation_id,
+        sender_id,
+        message_type,
+        message_text,
+        file_url,
+        file_name,
+        file_size,
+        file_type,
+    } = messageData;
 
     const conversation = await conversationRepository.findByIdWithAccess(
         conversation_id,
@@ -14,20 +22,31 @@ export const createMessageService = async (messageData) => {
         throw new Error("CONVERSATION_NOT_FOUND_OR_ACCESS_DENIED");
     }
 
-    if (message_type === "TEXT" && !message_text) {
-        throw new Error("MESSAGE_TEXT_REQUIRED");
-    }
-
-    if (message_type === "IMAGE" && !file_url) {
-        throw new Error("FILE_URL_REQUIRED_FOR_IMAGE");
+    // Validate message content based on type
+    if (message_type === "TEXT") {
+        if (!message_text || message_text.trim() === "") {
+            throw new Error("MESSAGE_TEXT_REQUIRED");
+        }
+        if (file_url) {
+            throw new Error("TEXT_MESSAGES_CANNOT_HAVE_FILE_URL");
+        }
+    } else if (["IMAGE", "FILE", "VIDEO", "AUDIO"].includes(message_type)) {
+        if (!file_url) {
+            throw new Error("FILE_URL_REQUIRED");
+        }
+    } else {
+        throw new Error("INVALID_MESSAGE_TYPE");
     }
 
     const message = await messageRepository.create({
         conversation_id,
         sender_id,
         message_type: message_type || "TEXT",
-        message_text,
+        message_text: message_text?.trim(),
         file_url,
+        file_name,
+        file_size,
+        file_type,
         is_delivered: false,
     });
 
@@ -135,11 +154,21 @@ export const deleteMessageService = async (message_id, user_id) => {
         const deletedMessage = await messageRepository.update(message_id, {
             message_text: "This message was deleted",
             file_url: null,
+            file_name: null,
+            file_size: null,
+            file_type: null,
         });
         return deletedMessage;
     } else {
-        await messageRepository.delete(message_id);
-        return { id: message_id, deleted: true };
+        // For file messages, we keep the file info but mark as deleted
+        const deletedMessage = await messageRepository.update(message_id, {
+            message_text: "This file was deleted",
+            file_url: null,
+            file_name: null,
+            file_size: null,
+            file_type: null,
+        });
+        return deletedMessage;
     }
 };
 

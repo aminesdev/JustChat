@@ -62,6 +62,9 @@ model Message {
   message_type    MessageType @default(TEXT)
   message_text    String?
   file_url        String?
+  file_name       String?  // Add file name
+  file_size       Int?     // Add file size in bytes
+  file_type       String?  // Add MIME type
   is_delivered    Boolean  @default(false)
   delivered_at    DateTime?
   created_at      DateTime @default(now())
@@ -92,4 +95,7 @@ model ReadReceipt {
 enum MessageType {
   TEXT
   IMAGE
+  FILE
+  VIDEO
+  AUDIO
 }

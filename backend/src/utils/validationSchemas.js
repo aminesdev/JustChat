@@ -58,17 +58,26 @@ export const conversationValidation = {
 
 export const messageValidation = {
     createMessage: Joi.object({
-        message_text: Joi.string().max(1000).when("message_type", {
-            is: "TEXT",
-            then: Joi.required(),
-            otherwise: Joi.optional(),
-        }),
-        message_type: Joi.string().valid("TEXT", "IMAGE").default("TEXT"),
-        file_url: Joi.string().uri().when("message_type", {
-            is: "IMAGE",
-            then: Joi.required(),
-            otherwise: Joi.optional(),
-        }),
+        message_text: Joi.string()
+            .max(1000)
+            .when("message_type", {
+                is: "TEXT",
+                then: Joi.required(),
+                otherwise: Joi.optional().allow(""),
+            }),
+        message_type: Joi.string()
+            .valid("TEXT", "IMAGE", "FILE", "VIDEO", "AUDIO")
+            .default("TEXT"),
+        file_url: Joi.string()
+            .uri()
+            .when("message_type", {
+                is: Joi.valid("IMAGE", "FILE", "VIDEO", "AUDIO"),
+                then: Joi.required(),
+                otherwise: Joi.optional().allow(null),
+            }),
+        file_name: Joi.string().max(255).optional(),
+        file_size: Joi.number().integer().min(0).optional(),
+        file_type: Joi.string().max(100).optional(),
     }),
 
     updateMessage: Joi.object({

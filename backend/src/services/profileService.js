@@ -1,9 +1,6 @@
 import bcrypt from "bcryptjs";
 import { userRepository } from "../repositories/userRepository.js";
-import {
-    uploadImageService,
-    deleteImageService,
-} from "./fileStorageService.js";
+import { uploadFileService, deleteFileService } from "./fileStorageService.js";
 import { extractPublicId } from "../utils/cloudinaryUtils.js";
 
 const saltRounds = parseInt(process.env.ROUNDS) || 12;
@@ -33,8 +30,9 @@ export const updateProfileService = async (userId, updateData) => {
         }
 
         try {
-            const uploadResult = await uploadImageService(
+            const uploadResult = await uploadFileService(
                 avatar_file.buffer,
+                avatar_file.originalname,
                 "profiles"
             );
             newAvatarUrl = uploadResult.secure_url;
@@ -45,7 +43,7 @@ export const updateProfileService = async (userId, updateData) => {
                 const oldPublicId = extractPublicId(user.avatar_url);
                 if (oldPublicId) {
                     try {
-                        await deleteImageService(oldPublicId);
+                        await deleteFileService(oldPublicId, "image");
                     } catch (error) {
                         console.log(
                             "Failed to delete old image:",
