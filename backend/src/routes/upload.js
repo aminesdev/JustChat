@@ -1,5 +1,9 @@
 import express from "express";
-import { uploadFile, uploadImage } from "../controllers/uploadController.js";
+import {
+    uploadFile,
+    uploadImage,
+    cloudinaryHealth,
+} from "../controllers/uploadController.js";
 import { authenticateToken } from "../middlewares/auth.js";
 import { upload } from "../middlewares/upload.js";
 
@@ -13,6 +17,24 @@ router.use(authenticateToken);
  *   name: Upload
  *   description: File upload endpoints
  */
+
+/**
+ * @swagger
+ * /upload/health:
+ *   get:
+ *     summary: Check Cloudinary health status
+ *     tags: [Upload]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Cloudinary is healthy
+ *       503:
+ *         description: Cloudinary is not responding
+ */
+router.get("/health", cloudinaryHealth);
+
+// ... rest of your existing routes ...
 
 /**
  * @swagger

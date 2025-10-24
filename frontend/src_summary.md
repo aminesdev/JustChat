@@ -165,15 +165,13 @@ const ChatHeader = ({conversationId, onDeleteClick}) => {
 
     if (!conversation || !conversationId) {
         return (
-            <div className="border-b border-border p-4 w-full">
-                <div className="flex items-center justify-between max-w-full">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center">
-                            <span className="text-sm font-medium text-muted-foreground">?</span>
-                        </div>
-                        <div>
-                            <h3 className="font-semibold">Select a chat</h3>
-                        </div>
+            <div className="border-b border-border p-4 h-16 flex items-center justify-between w-full">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center">
+                        <span className="text-sm font-medium text-muted-foreground">?</span>
+                    </div>
+                    <div>
+                        <h3 className="font-semibold">Select a chat</h3>
                     </div>
                 </div>
             </div>
@@ -188,35 +186,33 @@ const ChatHeader = ({conversationId, onDeleteClick}) => {
     const otherUser = getOtherUser();
 
     return (
-        <div className="border-b border-border p-4 w-full">
-            <div className="flex items-center justify-between max-w-full">
-                <div className="flex items-center gap-3">
-                    <Avatar
-                        user={otherUser}
-                        size="md"
-                        showOnlineIndicator={true}
-                    />
-                    <div>
-                        <h3 className="font-semibold">
-                            {otherUser?.full_name || 'Unknown User'}
-                        </h3>
-                        <p className="text-sm text-muted-foreground">
-                            {otherUser?.is_online ? 'Online' : 'Offline'}
-                        </p>
-                    </div>
+        <div className="border-b border-border p-4 h-16 flex items-center justify-between w-full">
+            <div className="flex items-center gap-3">
+                <Avatar
+                    user={otherUser}
+                    size="md"
+                    showOnlineIndicator={true}
+                />
+                <div>
+                    <h3 className="font-semibold">
+                        {otherUser?.full_name || 'Unknown User'}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                        {otherUser?.is_online ? 'Online' : 'Offline'}
+                    </p>
                 </div>
+            </div>
 
-                <div className="flex items-center gap-1">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={onDeleteClick}
-                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                        title="Delete conversation"
-                    >
-                        <Trash2 className="h-4 w-4" />
-                    </Button>
-                </div>
+            <div className="flex items-center gap-1">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onDeleteClick}
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    title="Delete conversation"
+                >
+                    <Trash2 className="h-4 w-4" />
+                </Button>
             </div>
         </div>
     );
@@ -482,8 +478,8 @@ const MessageInput = ({conversationId}) => {
 
     if (!conversationId) {
         return (
-            <div className="border-t border-border p-4 w-full">
-                <div className="flex items-center justify-center text-muted-foreground text-sm">
+            <div className="border-t border-border p-4 h-16 flex items-center w-full">
+                <div className="flex items-center justify-center text-muted-foreground text-sm w-full">
                     Select a conversation to start messaging
                 </div>
             </div>
@@ -491,8 +487,8 @@ const MessageInput = ({conversationId}) => {
     }
 
     return (
-        <div className="border-t border-border p-4 w-full">
-            <form onSubmit={handleSendMessage} className="flex items-end gap-2 max-w-full">
+        <div className="border-t border-border p-4 h-16 flex items-center w-full">
+            <form onSubmit={handleSendMessage} className="flex items-center gap-2 w-full">
                 <div className="flex items-center gap-2 flex-1">
                     <input
                         type="file"
@@ -512,14 +508,14 @@ const MessageInput = ({conversationId}) => {
                         <Image className="h-4 w-4" />
                     </Button>
 
-                    <div className="flex-1 relative">
+                    <div className="flex-1">
                         <Input
                             value={messageText}
                             onChange={(e) => setMessageText(e.target.value)}
                             onKeyPress={handleKeyPress}
                             placeholder="Type a message..."
                             disabled={isLoading}
-                            className="pr-10 resize-none"
+                            className="w-full"
                         />
                     </div>
 
@@ -665,6 +661,17 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
         );
     };
 
+    // Function to check if a message is the last one in a date group
+    const isLastMessageInGroup = (currentMessage, groupMessages, groupIndex) => {
+        return groupMessages.indexOf(currentMessage) === groupMessages.length - 1;
+    };
+
+    // Function to check if a message is the last one in the entire conversation
+    const isLastMessageInConversation = (currentMessage) => {
+        const allMessages = Object.values(groupedMessages).flat();
+        return allMessages.indexOf(currentMessage) === allMessages.length - 1;
+    };
+
     if (!conversationId) {
         return (
             <div className="flex-1 flex items-center justify-center p-8">
@@ -685,10 +692,10 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
 
     return (
         <>
-            <div className="flex-1 flex flex-col min-h-0"> {/* Crucial for scrolling */}
+            <div className="flex-1 flex flex-col min-h-0">
                 <div
                     ref={messagesContainerRef}
-                    className="flex-1 overflow-y-auto p-4 space-y-6"
+                    className="flex-1 overflow-y-auto p-4 space-y-3"
                     style={{
                         scrollBehavior: 'smooth',
                         WebkitOverflowScrolling: 'touch'
@@ -715,56 +722,64 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
                         </div>
                     ) : (
                         Object.entries(groupedMessages).map(([date, messages]) => (
-                            <div key={date} className="space-y-4">
+                            <div key={date} className="space-y-2">
                                 <div className="flex justify-center">
                                     <div className="px-3 py-1 bg-muted rounded-full text-xs text-muted-foreground">
                                         {formatDateHeader(date)}
                                     </div>
                                 </div>
 
-                                {messages.map((message) => (
-                                    <div
-                                        key={message.id}
-                                        className={`flex gap-3 ${isOwnMessage(message) ? 'justify-end' : 'justify-start'}`}
-                                    >
-                                        {!isOwnMessage(message) && (
-                                            <div className="flex-shrink-0">
-                                                <Avatar
-                                                    user={message.sender}
-                                                    size="sm"
-                                                    showOnlineIndicator={false}
-                                                />
-                                            </div>
-                                        )}
+                                {messages.map((message, index) => {
+                                    const isLastInGroup = index === messages.length - 1;
+                                    const isLastInConversation = isLastMessageInConversation(message);
+                                    const showTimeAndStatus = isLastInGroup || isLastInConversation;
 
-                                        <div className={`flex flex-col max-w-xs lg:max-w-md ${isOwnMessage(message) ? 'items-end' : 'items-start'}`}>
+                                    return (
+                                        <div
+                                            key={message.id}
+                                            className={`flex gap-2 ${isOwnMessage(message) ? 'justify-end' : 'justify-start'}`}
+                                        >
                                             {!isOwnMessage(message) && (
-                                                <p className="text-xs text-muted-foreground mb-1">
-                                                    {message.sender?.full_name}
-                                                </p>
+                                                <div className="flex-shrink-0">
+                                                    <Avatar
+                                                        user={message.sender}
+                                                        size="sm"
+                                                        showOnlineIndicator={false}
+                                                    />
+                                                </div>
                                             )}
 
-                                            <div className={`rounded-lg px-3 py-2 ${isOwnMessage(message)
-                                                ? 'bg-primary text-primary-foreground'
-                                                : 'bg-muted'
-                                                }`}>
-                                                {renderMessageContent(message)}
-                                            </div>
+                                            <div className={`flex flex-col max-w-xs lg:max-w-md ${isOwnMessage(message) ? 'items-end' : 'items-start'}`}>
+                                                {!isOwnMessage(message) && (
+                                                    <p className="text-xs text-muted-foreground mb-0.5">
+                                                        {message.sender?.full_name}
+                                                    </p>
+                                                )}
 
-                                            <div className={`flex items-center gap-2 mt-1 ${isOwnMessage(message) ? 'flex-row-reverse' : 'flex-row'
-                                                }`}>
-                                                <span className="text-xs text-muted-foreground">
-                                                    {formatMessageTime(message.created_at)}
-                                                </span>
-                                                {isOwnMessage(message) && (
-                                                    <span className="text-xs">
-                                                        {renderMessageStatus(message)}
-                                                    </span>
+                                                <div className={`rounded-lg px-3 py-2 ${isOwnMessage(message)
+                                                    ? 'bg-primary text-primary-foreground'
+                                                    : 'bg-muted'
+                                                    }`}>
+                                                    {renderMessageContent(message)}
+                                                </div>
+
+                                                {/* Show time and status only on the last message in group */}
+                                                {showTimeAndStatus && (
+                                                    <div className={`flex items-center gap-1 mt-0.5 ${isOwnMessage(message) ? 'flex-row-reverse' : 'flex-row'}`}>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {formatMessageTime(message.created_at)}
+                                                        </span>
+                                                        {isOwnMessage(message) && (
+                                                            <span className="text-xs">
+                                                                {renderMessageStatus(message)}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ))
                     )}
@@ -831,11 +846,11 @@ const Layout = ({children}) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     return (
-        <div className="flex h-screen bg-background w-full">
+        <div className="flex h-screen bg-background">
             <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
-            <div className="flex-1 flex flex-col w-full">
+            <div className="flex-1 flex flex-col min-w-0">
                 <Navbar onMenuClick={() => setIsSidebarOpen(true)} />
-                <main className="flex-1 overflow-hidden w-full">
+                <main className="flex-1 overflow-hidden min-w-0">
                     {children}
                 </main>
             </div>
@@ -861,12 +876,9 @@ const Navbar = ({onMenuClick}) => {
         await logout();
     };
 
-    console.log("Navbar - Current user:", user);
-    console.log("Navbar - Avatar URL:", user?.avatar_url);
-
     return (
-        <header className="border-b border-border bg-card/50 backdrop-blur-sm">
-            <div className="flex items-center justify-between px-4 py-3">
+        <header className="border-b border-border bg-card/50 backdrop-blur-sm h-16 flex items-center">
+            <div className="flex items-center justify-between px-4 py-0 w-full">
                 <div className="flex items-center gap-4">
                     <Button
                         variant="ghost"
@@ -881,8 +893,6 @@ const Navbar = ({onMenuClick}) => {
 
                 <div className="flex items-center gap-2">
                     <ThemeToggle />
-
-                    {/* User profile with avatar */}
                     <div className="flex items-center gap-3 mr-2">
                         <div className="relative">
                             {user?.avatar_url ? (
@@ -891,13 +901,9 @@ const Navbar = ({onMenuClick}) => {
                                     alt={user?.full_name || 'User'}
                                     className="w-8 h-8 rounded-full object-cover border border-border"
                                     onError={(e) => {
-                                        console.error('Navbar - Failed to load avatar:', user?.avatar_url);
                                         e.target.style.display = 'none';
                                         const fallback = e.target.nextElementSibling;
                                         if (fallback) fallback.style.display = 'flex';
-                                    }}
-                                    onLoad={(e) => {
-                                        console.log('Navbar - Avatar loaded successfully');
                                     }}
                                 />
                             ) : null}
@@ -911,7 +917,6 @@ const Navbar = ({onMenuClick}) => {
                             {user?.full_name}
                         </span>
                     </div>
-
                     <Button variant="ghost" size="icon" onClick={handleLogout}>
                         <LogOut className="h-4 w-4" />
                     </Button>
@@ -1041,17 +1046,10 @@ const Sidebar = ({isOpen, onClose}) => {
         }
     };
 
-    // Add this function to handle conversation click from ConversationList
     const handleConversationClick = (conversation) => {
         console.log("🔄 Sidebar - Conversation clicked:", conversation.id);
-
-        // Set the current conversation
         setCurrentConversation(conversation.id);
-
-        // Navigate to chat page
         navigate('/chat');
-
-        // Close sidebar on mobile
         onClose();
     };
 
@@ -1100,7 +1098,6 @@ const Sidebar = ({isOpen, onClose}) => {
                                         size="md"
                                         showOnlineIndicator={true}
                                     />
-
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm truncate">
                                             {userItem.full_name}
@@ -1109,7 +1106,6 @@ const Sidebar = ({isOpen, onClose}) => {
                                             {userItem.email}
                                         </p>
                                     </div>
-
                                     {loadingUserId === userItem.id && (
                                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                     )}
@@ -1136,7 +1132,8 @@ const Sidebar = ({isOpen, onClose}) => {
                 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
             `}>
                 <div className="flex flex-col h-full">
-                    <div className="flex items-center justify-between p-4 border-b border-border">
+                    {/* Sidebar Header */}
+                    <div className="flex items-center justify-between p-4 border-b border-border h-16">
                         <h2 className="text-lg font-semibold">
                             {activeView === 'conversations' ? 'Conversations' : 'Users'}
                         </h2>
@@ -1145,8 +1142,9 @@ const Sidebar = ({isOpen, onClose}) => {
                         </Button>
                     </div>
 
-                    <div className="p-4 border-b border-border">
-                        <div className="flex items-center gap-2">
+                    {/* Search Section - Same height as ChatHeader */}
+                    <div className="border-b border-border p-4 h-16 flex items-center">
+                        <div className="flex items-center gap-2 w-full">
                             <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <input
@@ -1175,8 +1173,8 @@ const Sidebar = ({isOpen, onClose}) => {
                         {renderContent()}
                     </div>
 
-                    {/* Profile Button with Avatar */}
-                    <div className="p-4 border-t border-border">
+                    {/* Profile Section */}
+                    <div className="p-4 border-t border-border h-16 flex items-center pt-5 pb-5">
                         <Button
                             variant="ghost"
                             className="w-full justify-start p-3 h-auto"
@@ -2576,26 +2574,22 @@ const Chat = () => {
 
     return (
         <Layout>
-            <div className="flex h-full">
+            <div className="flex h-full w-full">
                 {currentConversationId ? (
-                    <div className="flex-1 flex flex-col min-h-0 w-full">
-                        <div className="w-full">
-                            <ChatHeader
-                                conversationId={currentConversationId}
-                                onDeleteClick={handleDeleteClick}
-                            />
-                        </div>
+                    <div className="flex-1 flex flex-col min-h-0 w-full"> {/* Ensure full width */}
+                        <ChatHeader
+                            conversationId={currentConversationId}
+                            onDeleteClick={handleDeleteClick}
+                        />
                         <MessageList
                             conversationId={currentConversationId}
                             showDeleteDialog={showDeleteDialog}
                             onDeleteDialogChange={setShowDeleteDialog}
                         />
-                        <div className="w-full">
-                            <MessageInput conversationId={currentConversationId} />
-                        </div>
+                        <MessageInput conversationId={currentConversationId} />
                     </div>
                 ) : (
-                    <div className="flex-1 flex items-center justify-center">
+                    <div className="flex-1 flex items-center justify-center w-full">
                         <Card className="w-full max-w-md mx-4">
                             <CardContent className="p-6 text-center">
                                 <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">

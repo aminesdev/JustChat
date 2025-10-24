@@ -9,6 +9,7 @@ const Avatar = ({
     showOnlineIndicator = false
 }) => {
     const [imageError, setImageError] = useState(false);
+    const [imageLoading, setImageLoading] = useState(true);
 
     const sizeClasses = {
         sm: 'w-8 h-8',
@@ -32,6 +33,13 @@ const Avatar = ({
     const handleImageError = () => {
         console.log('Avatar image failed to load:', avatarUrl);
         setImageError(true);
+        setImageLoading(false);
+    };
+
+    const handleImageLoad = () => {
+        console.log('Avatar image loaded successfully:', avatarUrl);
+        setImageLoading(false);
+        setImageError(false);
     };
 
     return (
@@ -42,15 +50,24 @@ const Avatar = ({
                         src={avatarUrl}
                         alt={user?.full_name || 'User avatar'}
                         className={cn(
-                            'rounded-full object-cover border border-border',
-                            sizeClasses[size]
+                            'rounded-full object-cover border border-border transition-opacity',
+                            sizeClasses[size],
+                            imageLoading ? 'opacity-0' : 'opacity-100'
                         )}
                         onError={handleImageError}
-                        onLoad={() => {
-                            console.log('Avatar image loaded successfully:', avatarUrl);
-                            setImageError(false);
-                        }}
+                        onLoad={handleImageLoad}
                     />
+
+                    {/* Loading skeleton */}
+                    {imageLoading && (
+                        <div
+                            className={cn(
+                                'absolute inset-0 bg-muted rounded-full animate-pulse',
+                                sizeClasses[size]
+                            )}
+                        />
+                    )}
+
                     {showOnlineIndicator && user?.is_online && (
                         <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background"></div>
                     )}

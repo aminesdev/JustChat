@@ -55,7 +55,29 @@ export const handleProfileError = (res, error) => {
 export const handleCloudinaryError = (res, error) => {
     const errorMap = {
         UPLOAD_FAILED: () =>
-            errorResponse(res, "Failed to upload image to cloud storage", 502),
+            errorResponse(
+                res,
+                "Failed to upload image to cloud storage. Please try again.",
+                502
+            ),
+        UPLOAD_TIMEOUT: () =>
+            errorResponse(
+                res,
+                "Image upload timeout. The service may be temporarily unavailable. Please try again in a moment.",
+                504
+            ),
+        UPLOAD_STREAM_ERROR: () =>
+            errorResponse(
+                res,
+                "Upload connection error. Please try again.",
+                502
+            ),
+        STREAM_WRITE_ERROR: () =>
+            errorResponse(
+                res,
+                "Error processing file upload. Please try again.",
+                500
+            ),
         DELETE_FAILED: () =>
             errorResponse(
                 res,
@@ -65,12 +87,16 @@ export const handleCloudinaryError = (res, error) => {
         INVALID_IMAGE_FORMAT: () =>
             badRequestResponse(
                 res,
-                "Invalid image format. Supported formats: JPEG, PNG, WebP"
+                "Invalid image format. Supported formats: JPEG, PNG, WebP, GIF, BMP"
             ),
         IMAGE_TOO_LARGE: () =>
             badRequestResponse(res, "Image size too large. Maximum size: 5MB"),
+        FILE_TOO_LARGE: () =>
+            badRequestResponse(res, "File size too large. Maximum size: 10MB"),
         CLOUDINARY_CONFIG_ERROR: () =>
             errorResponse(res, "Cloud storage configuration error", 503),
+        CLOUDINARY_AUTH_ERROR: () =>
+            errorResponse(res, "Cloud storage authentication error", 503),
         IMAGE_PROCESSING_ERROR: () =>
             errorResponse(res, "Error processing image", 500),
         FILE_URL_REQUIRED: () =>
@@ -86,7 +112,10 @@ export const handleCloudinaryError = (res, error) => {
         handler();
     } else {
         console.error("Cloudinary error:", error);
-        errorResponse(res, "Image service temporarily unavailable");
+        errorResponse(
+            res,
+            "Image service temporarily unavailable. Please try again in a moment."
+        );
     }
 };
 

@@ -47,9 +47,9 @@ export const getAvatarUrl = (url) => {
 export const validateAvatarFile = (file) => {
     if (!file) return "No file selected";
 
-    const allowedTypes = ["image/jpeg", "image/jpg"];
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
     if (!allowedTypes.includes(file.type)) {
-        return "Only JPEG (.jpeg, .jpg) images are allowed";
+        return "Only JPEG, PNG, and WebP images are allowed";
     }
 
     if (file.size > 5 * 1024 * 1024) {

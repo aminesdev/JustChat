@@ -7,7 +7,7 @@ import {getAvatarUrl} from '@/utils/avatarUtils';
 import {Card} from '@/components/ui/card';
 import Avatar from '@/components/ui/Avatar';
 import {Button} from '@/components/ui/button';
-import {Trash2, AlertTriangle, MessageSquare} from 'lucide-react';
+import {Trash2, AlertTriangle, MessageSquare, Expand, Image as ImageIcon} from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -98,19 +98,46 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
         if (message.message_type === 'IMAGE') {
             return (
                 <div className="max-w-xs">
-                    <img
-                        src={getAvatarUrl(message.file_url)}
-                        alt="Shared image"
-                        className="rounded-lg max-w-full h-auto border border-border"
-                        onError={(e) => {
-                            e.target.style.display = 'none';
-                            const fallback = e.target.nextElementSibling;
-                            if (fallback) fallback.style.display = 'block';
-                        }}
-                    />
-                    <div className="hidden bg-muted rounded-lg p-4 text-center text-sm text-muted-foreground">
-                        Image not available
+                    <div className="relative group">
+                        <img
+                            src={getAvatarUrl(message.file_url)}
+                            alt="Shared image"
+                            className="rounded-lg max-w-full h-auto border border-border cursor-pointer hover:opacity-90 transition-opacity"
+                            onError={(e) => {
+                                console.error('Failed to load image:', message.file_url);
+                                e.target.style.display = 'none';
+                                const fallback = e.target.nextElementSibling;
+                                if (fallback) fallback.style.display = 'block';
+                            }}
+                            onLoad={() => {
+                                console.log('Image loaded successfully:', message.file_url);
+                            }}
+                        />
+                        <div className="hidden bg-muted rounded-lg p-4 text-center text-sm text-muted-foreground">
+                            <ImageIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p>Image not available</p>
+                            <p className="text-xs mt-1">Failed to load image</p>
+                        </div>
+
+                        {/* Image overlay for potential zoom feature */}
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 bg-background/80 hover:bg-background"
+                                onClick={() => window.open(getAvatarUrl(message.file_url), '_blank')}
+                            >
+                                <Expand className="h-4 w-4" />
+                            </Button>
+                        </div>
                     </div>
+
+                    {/* Optional: Add image caption if message text exists */}
+                    {message.message_text && (
+                        <p className="text-sm text-muted-foreground mt-2">
+                            {message.message_text}
+                        </p>
+                    )}
                 </div>
             );
         }

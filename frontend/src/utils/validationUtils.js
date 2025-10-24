@@ -42,7 +42,7 @@ export const validateConversationId = (id) => {
 
 export const validateFileUpload = (file, options = {}) => {
     const {
-        maxSize = 5 * 1024 * 1024,
+        maxSize = 5 * 1024 * 1024, // 5MB
         allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"],
     } = options;
 
@@ -50,12 +50,28 @@ export const validateFileUpload = (file, options = {}) => {
         return "No file selected";
     }
 
-    if (file.size > maxSize) {
-        return `File must be smaller than ${maxSize / 1024 / 1024}MB`;
+    // Check file type
+    if (!allowedTypes.includes(file.type)) {
+        const allowedExtensions = allowedTypes
+            .map((type) => {
+                const parts = type.split("/");
+                return parts[1] ? `.${parts[1]}` : "";
+            })
+            .filter((ext) => ext)
+            .join(", ");
+
+        return `Only ${allowedExtensions} images are allowed`;
     }
 
-    if (!allowedTypes.includes(file.type)) {
-        return "Only JPEG, PNG, WebP, and GIF images are allowed";
+    // Check file size
+    if (file.size > maxSize) {
+        const maxSizeMB = maxSize / 1024 / 1024;
+        return `File must be smaller than ${maxSizeMB}MB`;
+    }
+
+    // Check if it's actually an image
+    if (!file.type.startsWith("image/")) {
+        return "Selected file is not an image";
     }
 
     return null;
