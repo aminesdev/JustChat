@@ -196,41 +196,36 @@ const Sidebar = ({isOpen, onClose}) => {
                 <div className="flex flex-col h-full">
                     <div className="flex items-center justify-between p-4 border-b border-border">
                         <h2 className="text-lg font-semibold">
-                            {activeView === 'conversations' ? 'Messages' : 'All Users'}
+                            {activeView === 'conversations' ? 'Conversations' : 'Users'}
                         </h2>
                         <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden">
                             <X className="h-4 w-4" />
                         </Button>
                     </div>
 
-                    <div className="flex border-b border-border">
-                        <Button
-                            variant={activeView === 'conversations' ? 'secondary' : 'ghost'}
-                            className="flex-1 rounded-none"
-                            onClick={() => handleViewChange('conversations')}
-                        >
-                            <MessageSquare className="h-4 w-4 mr-2" />
-                            Messages
-                        </Button>
-                        <Button
-                            variant={activeView === 'users' ? 'secondary' : 'ghost'}
-                            className="flex-1 rounded-none"
-                            onClick={() => handleViewChange('users')}
-                        >
-                            <Users className="h-4 w-4 mr-2" />
-                            Users
-                        </Button>
-                    </div>
-
                     <div className="p-4 border-b border-border">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <input
-                                placeholder={activeView === 'conversations' ? "Search conversations..." : "Search users..."}
-                                value={searchQuery}
-                                onChange={handleSearch}
-                                className="w-full pl-10 pr-4 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            />
+                        <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <input
+                                    placeholder={activeView === 'conversations' ? "Search conversations..." : "Search users..."}
+                                    value={searchQuery}
+                                    onChange={handleSearch}
+                                    className="w-full pl-10 pr-4 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                />
+                            </div>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleViewChange(activeView === 'conversations' ? 'users' : 'conversations')}
+                                title={activeView === 'conversations' ? 'Switch to Users' : 'Switch to Conversations'}
+                            >
+                                {activeView === 'conversations' ? (
+                                    <Users className="h-4 w-4" />
+                                ) : (
+                                    <MessageSquare className="h-4 w-4" />
+                                )}
+                            </Button>
                         </div>
                     </div>
 

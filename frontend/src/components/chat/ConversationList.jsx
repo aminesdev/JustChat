@@ -134,9 +134,7 @@ const ConversationList = ({onConversationClick}) => {
                                                 size="md"
                                                 showOnlineIndicator={true}
                                             />
-                                            {hasUnread && (
-                                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full border-2 border-background"></div>
-                                            )}
+                                            {/* Red circle removed */}
                                         </div>
 
                                         <div className="flex-1 min-w-0">
