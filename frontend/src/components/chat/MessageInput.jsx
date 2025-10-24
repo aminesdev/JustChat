@@ -73,8 +73,8 @@ const MessageInput = ({conversationId}) => {
 
     if (!conversationId) {
         return (
-            <div className="border-t border-border p-4">
-                <div className="flex items-center justify-center text-muted-foreground text-sm">
+            <div className="border-t border-border p-4 h-16 flex items-center w-full">
+                <div className="flex items-center justify-center text-muted-foreground text-sm w-full">
                     Select a conversation to start messaging
                 </div>
             </div>
@@ -82,8 +82,8 @@ const MessageInput = ({conversationId}) => {
     }
 
     return (
-        <div className="border-t border-border p-4">
-            <form onSubmit={handleSendMessage} className="flex items-end gap-2">
+        <div className="border-t border-border p-4 h-16 flex items-center w-full">
+            <form onSubmit={handleSendMessage} className="flex items-center gap-2 w-full">
                 <div className="flex items-center gap-2 flex-1">
                     <input
                         type="file"
@@ -103,14 +103,14 @@ const MessageInput = ({conversationId}) => {
                         <Image className="h-4 w-4" />
                     </Button>
 
-                    <div className="flex-1 relative">
+                    <div className="flex-1">
                         <Input
                             value={messageText}
                             onChange={(e) => setMessageText(e.target.value)}
                             onKeyPress={handleKeyPress}
                             placeholder="Type a message..."
                             disabled={isLoading}
-                            className="pr-10 resize-none"
+                            className="w-full"
                         />
                     </div>
 

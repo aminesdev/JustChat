@@ -50,9 +50,9 @@ const Chat = () => {
 
     return (
         <Layout>
-            <div className="flex h-full">
+            <div className="flex h-full w-full">
                 {currentConversationId ? (
-                    <div className="flex-1 flex flex-col min-h-0"> {/* Crucial: min-h-0 for proper flexbox */}
+                    <div className="flex-1 flex flex-col min-h-0 w-full"> {/* Ensure full width */}
                         <ChatHeader
                             conversationId={currentConversationId}
                             onDeleteClick={handleDeleteClick}
@@ -65,7 +65,7 @@ const Chat = () => {
                         <MessageInput conversationId={currentConversationId} />
                     </div>
                 ) : (
-                    <div className="flex-1 flex items-center justify-center">
+                    <div className="flex-1 flex items-center justify-center w-full">
                         <Card className="w-full max-w-md mx-4">
                             <CardContent className="p-6 text-center">
                                 <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">

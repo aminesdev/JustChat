@@ -99,17 +99,10 @@ const Sidebar = ({isOpen, onClose}) => {
         }
     };
 
-    // Add this function to handle conversation click from ConversationList
     const handleConversationClick = (conversation) => {
         console.log("🔄 Sidebar - Conversation clicked:", conversation.id);
-
-        // Set the current conversation
         setCurrentConversation(conversation.id);
-
-        // Navigate to chat page
         navigate('/chat');
-
-        // Close sidebar on mobile
         onClose();
     };
 
@@ -158,7 +151,6 @@ const Sidebar = ({isOpen, onClose}) => {
                                         size="md"
                                         showOnlineIndicator={true}
                                     />
-
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm truncate">
                                             {userItem.full_name}
@@ -167,7 +159,6 @@ const Sidebar = ({isOpen, onClose}) => {
                                             {userItem.email}
                                         </p>
                                     </div>
-
                                     {loadingUserId === userItem.id && (
                                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                     )}
@@ -194,7 +185,8 @@ const Sidebar = ({isOpen, onClose}) => {
                 ${isOpen ? 'translate-x-0' : '-translate-x-full'}
             `}>
                 <div className="flex flex-col h-full">
-                    <div className="flex items-center justify-between p-4 border-b border-border">
+                    {/* Sidebar Header */}
+                    <div className="flex items-center justify-between p-4 border-b border-border h-16">
                         <h2 className="text-lg font-semibold">
                             {activeView === 'conversations' ? 'Conversations' : 'Users'}
                         </h2>
@@ -203,8 +195,9 @@ const Sidebar = ({isOpen, onClose}) => {
                         </Button>
                     </div>
 
-                    <div className="p-4 border-b border-border">
-                        <div className="flex items-center gap-2">
+                    {/* Search Section - Same height as ChatHeader */}
+                    <div className="border-b border-border p-4 h-16 flex items-center">
+                        <div className="flex items-center gap-2 w-full">
                             <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <input
@@ -233,8 +226,8 @@ const Sidebar = ({isOpen, onClose}) => {
                         {renderContent()}
                     </div>
 
-                    {/* Profile Button with Avatar */}
-                    <div className="p-4 border-t border-border">
+                    {/* Profile Section */}
+                    <div className="p-4 border-t border-border h-16 flex items-center pt-5 pb-5">
                         <Button
                             variant="ghost"
                             className="w-full justify-start p-3 h-auto"
