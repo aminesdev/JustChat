@@ -65,13 +65,11 @@ export const messageValidation = {
                 then: Joi.required(),
                 otherwise: Joi.optional().allow(""),
             }),
-        message_type: Joi.string()
-            .valid("TEXT", "IMAGE", "FILE", "VIDEO", "AUDIO")
-            .default("TEXT"),
+        message_type: Joi.string().valid("TEXT", "IMAGE").default("TEXT"),
         file_url: Joi.string()
             .uri()
             .when("message_type", {
-                is: Joi.valid("IMAGE", "FILE", "VIDEO", "AUDIO"),
+                is: "IMAGE",
                 then: Joi.required(),
                 otherwise: Joi.optional().allow(null),
             }),

@@ -95,7 +95,4 @@ model ReadReceipt {
 enum MessageType {
   TEXT
   IMAGE
-  FILE
-  VIDEO
-  AUDIO
 }

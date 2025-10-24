@@ -30,7 +30,7 @@ export const createMessageService = async (messageData) => {
         if (file_url) {
             throw new Error("TEXT_MESSAGES_CANNOT_HAVE_FILE_URL");
         }
-    } else if (["IMAGE", "FILE", "VIDEO", "AUDIO"].includes(message_type)) {
+    } else if (message_type === "IMAGE") {
         if (!file_url) {
             throw new Error("FILE_URL_REQUIRED");
         }
@@ -160,9 +160,9 @@ export const deleteMessageService = async (message_id, user_id) => {
         });
         return deletedMessage;
     } else {
-        // For file messages, we keep the file info but mark as deleted
+        // For image messages, we keep the file info but mark as deleted
         const deletedMessage = await messageRepository.update(message_id, {
-            message_text: "This file was deleted",
+            message_text: "This image was deleted",
             file_url: null,
             file_name: null,
             file_size: null,
