@@ -122,6 +122,17 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
         );
     };
 
+    // Function to check if a message is the last one in a date group
+    const isLastMessageInGroup = (currentMessage, groupMessages, groupIndex) => {
+        return groupMessages.indexOf(currentMessage) === groupMessages.length - 1;
+    };
+
+    // Function to check if a message is the last one in the entire conversation
+    const isLastMessageInConversation = (currentMessage) => {
+        const allMessages = Object.values(groupedMessages).flat();
+        return allMessages.indexOf(currentMessage) === allMessages.length - 1;
+    };
+
     if (!conversationId) {
         return (
             <div className="flex-1 flex items-center justify-center p-8">
@@ -142,10 +153,10 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
 
     return (
         <>
-            <div className="flex-1 flex flex-col min-h-0"> {/* Crucial for scrolling */}
+            <div className="flex-1 flex flex-col min-h-0">
                 <div
                     ref={messagesContainerRef}
-                    className="flex-1 overflow-y-auto p-4 space-y-6"
+                    className="flex-1 overflow-y-auto p-4 space-y-3"
                     style={{
                         scrollBehavior: 'smooth',
                         WebkitOverflowScrolling: 'touch'
@@ -172,56 +183,64 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
                         </div>
                     ) : (
                         Object.entries(groupedMessages).map(([date, messages]) => (
-                            <div key={date} className="space-y-4">
+                            <div key={date} className="space-y-2">
                                 <div className="flex justify-center">
                                     <div className="px-3 py-1 bg-muted rounded-full text-xs text-muted-foreground">
                                         {formatDateHeader(date)}
                                     </div>
                                 </div>
 
-                                {messages.map((message) => (
-                                    <div
-                                        key={message.id}
-                                        className={`flex gap-3 ${isOwnMessage(message) ? 'justify-end' : 'justify-start'}`}
-                                    >
-                                        {!isOwnMessage(message) && (
-                                            <div className="flex-shrink-0">
-                                                <Avatar
-                                                    user={message.sender}
-                                                    size="sm"
-                                                    showOnlineIndicator={false}
-                                                />
-                                            </div>
-                                        )}
+                                {messages.map((message, index) => {
+                                    const isLastInGroup = index === messages.length - 1;
+                                    const isLastInConversation = isLastMessageInConversation(message);
+                                    const showTimeAndStatus = isLastInGroup || isLastInConversation;
 
-                                        <div className={`flex flex-col max-w-xs lg:max-w-md ${isOwnMessage(message) ? 'items-end' : 'items-start'}`}>
+                                    return (
+                                        <div
+                                            key={message.id}
+                                            className={`flex gap-2 ${isOwnMessage(message) ? 'justify-end' : 'justify-start'}`}
+                                        >
                                             {!isOwnMessage(message) && (
-                                                <p className="text-xs text-muted-foreground mb-1">
-                                                    {message.sender?.full_name}
-                                                </p>
+                                                <div className="flex-shrink-0">
+                                                    <Avatar
+                                                        user={message.sender}
+                                                        size="sm"
+                                                        showOnlineIndicator={false}
+                                                    />
+                                                </div>
                                             )}
 
-                                            <div className={`rounded-lg px-3 py-2 ${isOwnMessage(message)
-                                                ? 'bg-primary text-primary-foreground'
-                                                : 'bg-muted'
-                                                }`}>
-                                                {renderMessageContent(message)}
-                                            </div>
+                                            <div className={`flex flex-col max-w-xs lg:max-w-md ${isOwnMessage(message) ? 'items-end' : 'items-start'}`}>
+                                                {!isOwnMessage(message) && (
+                                                    <p className="text-xs text-muted-foreground mb-0.5">
+                                                        {message.sender?.full_name}
+                                                    </p>
+                                                )}
 
-                                            <div className={`flex items-center gap-2 mt-1 ${isOwnMessage(message) ? 'flex-row-reverse' : 'flex-row'
-                                                }`}>
-                                                <span className="text-xs text-muted-foreground">
-                                                    {formatMessageTime(message.created_at)}
-                                                </span>
-                                                {isOwnMessage(message) && (
-                                                    <span className="text-xs">
-                                                        {renderMessageStatus(message)}
-                                                    </span>
+                                                <div className={`rounded-lg px-3 py-2 ${isOwnMessage(message)
+                                                    ? 'bg-primary text-primary-foreground'
+                                                    : 'bg-muted'
+                                                    }`}>
+                                                    {renderMessageContent(message)}
+                                                </div>
+
+                                                {/* Show time and status only on the last message in group */}
+                                                {showTimeAndStatus && (
+                                                    <div className={`flex items-center gap-1 mt-0.5 ${isOwnMessage(message) ? 'flex-row-reverse' : 'flex-row'}`}>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {formatMessageTime(message.created_at)}
+                                                        </span>
+                                                        {isOwnMessage(message) && (
+                                                            <span className="text-xs">
+                                                                {renderMessageStatus(message)}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ))
                     )}
