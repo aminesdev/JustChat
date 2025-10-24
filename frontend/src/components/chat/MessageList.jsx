@@ -149,9 +149,50 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
         );
     };
 
+    // Function to check if we should show the sender name
+    const shouldShowSenderName = (currentMessage, previousMessage, isFirstInGroup) => {
+        // Always show for first message in group
+        if (isFirstInGroup) return true;
+
+        // Don't show for own messages
+        if (isOwnMessage(currentMessage)) return false;
+
+        // Show if previous message doesn't exist
+        if (!previousMessage) return true;
+
+        // Show if previous message is from a different sender
+        if (previousMessage.sender_id !== currentMessage.sender_id) return true;
+
+        // Don't show if previous message is from the same sender
+        return false;
+    };
+
+    // Function to check if we should show the avatar
+    const shouldShowAvatar = (currentMessage, nextMessage, isLastInGroup) => {
+        // Don't show avatar for own messages
+        if (isOwnMessage(currentMessage)) return false;
+
+        // Always show for last message in group
+        if (isLastInGroup) return true;
+
+        // Show if next message doesn't exist
+        if (!nextMessage) return true;
+
+        // Show if next message is from a different sender
+        if (nextMessage.sender_id !== currentMessage.sender_id) return true;
+
+        // Don't show if next message is from the same sender
+        return false;
+    };
+
     // Function to check if a message is the last one in a date group
     const isLastMessageInGroup = (currentMessage, groupMessages, groupIndex) => {
         return groupMessages.indexOf(currentMessage) === groupMessages.length - 1;
+    };
+
+    // Function to check if a message is the first one in a date group
+    const isFirstMessageInGroup = (currentMessage, groupMessages, groupIndex) => {
+        return groupMessages.indexOf(currentMessage) === 0;
     };
 
     // Function to check if a message is the last one in the entire conversation
@@ -210,7 +251,7 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
                         </div>
                     ) : (
                         Object.entries(groupedMessages).map(([date, messages]) => (
-                            <div key={date} className="space-y-2">
+                            <div key={date} className="space-y-1"> {/* Reduced space between messages */}
                                 <div className="flex justify-center">
                                     <div className="px-3 py-1 bg-muted rounded-full text-xs text-muted-foreground">
                                         {formatDateHeader(date)}
@@ -218,16 +259,26 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
                                 </div>
 
                                 {messages.map((message, index) => {
+                                    const isFirstInGroup = index === 0;
                                     const isLastInGroup = index === messages.length - 1;
                                     const isLastInConversation = isLastMessageInConversation(message);
                                     const showTimeAndStatus = isLastInGroup || isLastInConversation;
 
+                                    const previousMessage = index > 0 ? messages[index - 1] : null;
+                                    const nextMessage = index < messages.length - 1 ? messages[index + 1] : null;
+
+                                    const showSenderName = shouldShowSenderName(message, previousMessage, isFirstInGroup);
+                                    const showAvatar = shouldShowAvatar(message, nextMessage, isLastInGroup);
+
                                     return (
                                         <div
                                             key={message.id}
-                                            className={`flex gap-2 ${isOwnMessage(message) ? 'justify-end' : 'justify-start'}`}
+                                            className={`flex gap-2 ${isOwnMessage(message) ? 'justify-end' : 'justify-start'} ${
+                                                // Add margin top only for messages that start a new sequence
+                                                showSenderName ? 'mt-3' : 'mt-1'
+                                                }`}
                                         >
-                                            {!isOwnMessage(message) && (
+                                            {!isOwnMessage(message) && showAvatar && (
                                                 <div className="flex-shrink-0">
                                                     <Avatar
                                                         user={message.sender}
@@ -237,8 +288,13 @@ const MessageList = ({conversationId, showDeleteDialog, onDeleteDialogChange}) =
                                                 </div>
                                             )}
 
+                                            {/* Spacer for alignment when avatar is hidden */}
+                                            {!isOwnMessage(message) && !showAvatar && (
+                                                <div className="w-8 flex-shrink-0"></div>
+                                            )}
+
                                             <div className={`flex flex-col max-w-xs lg:max-w-md ${isOwnMessage(message) ? 'items-end' : 'items-start'}`}>
-                                                {!isOwnMessage(message) && (
+                                                {!isOwnMessage(message) && showSenderName && (
                                                     <p className="text-xs text-muted-foreground mb-0.5">
                                                         {message.sender?.full_name}
                                                     </p>
