@@ -1,7 +1,7 @@
 export const APP_CONFIG = {
     APP_NAME: "JustChat",
-    API_BASE_URL: import.meta.env.VITE_API_URL || "http://localhost:5001/api",
-    WS_URL: import.meta.env.VITE_WS_URL || "ws://localhost:5001",
+    API_BASE_URL: import.meta.env.VITE_API_URL || "http://localhost:5002/api",
+    WS_URL: import.meta.env.VITE_WS_URL || "ws://localhost:5002",
     UPLOAD: {
         MAX_FILE_SIZE: 5 * 1024 * 1024,
         ALLOWED_IMAGE_TYPES: [

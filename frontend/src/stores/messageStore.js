@@ -3,8 +3,9 @@ import { chatService } from "../services/chatService";
 import { useAuthStore } from "./authStore";
 import { useConversationStore } from "./conversationStore";
 import { getErrorMessage } from "../utils/errorUtils";
-import { validateMessage, sanitizeMessage } from '@/utils/validationUtils';
+import { validateMessage, sanitizeMessage } from "@/utils/validationUtils";
 import { groupMessagesByDate } from "../utils/chatUtils";
+import { socketService } from "@/services/socketService";
 
 export const useMessageStore = create((set, get) => ({
     messages: new Map(),
@@ -115,11 +116,13 @@ export const useMessageStore = create((set, get) => ({
         });
 
         try {
-            const response = await chatService.sendMessage(
-                conversationId,
-                sanitizedData
-            );
-            const realMessage = response.data.data.message;
+            const response = await socketService.sendMessage({
+                conversation_id: conversationId,
+                ...sanitizedData,
+            });
+
+            const realMessage = response.message;
+
             set((state) => {
                 const existingData = state.messages.get(conversationId) || {
                     messages: [],
@@ -267,6 +270,7 @@ export const useMessageStore = create((set, get) => ({
         const messages = get().getMessages(conversationId);
         return groupMessagesByDate(messages);
     },
+
     resetStore: () =>
         set({
             messages: new Map(),

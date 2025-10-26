@@ -9,27 +9,24 @@ import ProtectedRoute from './components/layout/ProtectedRoute';
 import {useAuthStore} from './stores/authStore';
 import {useUIStore} from './stores/uiStore';
 import {useUserStore} from './stores/userStore';
-import {useConversationStore} from './stores/conversationStore'; // Add this import
+import {useConversationStore} from './stores/conversationStore';
+import {socketService} from './services/socketService';
 
 function App() {
     const {isAuthenticated, initialize} = useAuthStore();
     const {loadCurrentUser} = useUserStore();
     const {theme} = useUIStore();
-    const {loadConversations} = useConversationStore(); // Add this
+    const {loadConversations} = useConversationStore();
     const [isInitialized, setIsInitialized] = useState(false);
-
-    console.log('App component - isAuthenticated:', isAuthenticated);
 
     useEffect(() => {
         const initApp = async () => {
             await initialize();
 
             if (isAuthenticated) {
-                console.log('App - User is authenticated, loading profile data and conversations...');
                 await loadCurrentUser();
-
-                // Force load conversations when user authenticates
                 await loadConversations();
+                socketService.connect();
             }
 
             setIsInitialized(true);
@@ -37,6 +34,18 @@ function App() {
 
         initApp();
     }, [initialize, loadCurrentUser, loadConversations, isAuthenticated]);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            socketService.connect();
+        } else {
+            socketService.disconnect();
+        }
+
+        return () => {
+            socketService.disconnect();
+        };
+    }, [isAuthenticated]);
 
     useEffect(() => {
         document.documentElement.classList.toggle('dark', theme === 'dark');

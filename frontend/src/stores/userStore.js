@@ -17,7 +17,6 @@ export const useUserStore = create((set, get) => ({
         const refreshToken = localStorage.getItem("refreshToken");
 
         if (!accessToken || !refreshToken) {
-            console.log("No tokens available for loading user profile");
             set({
                 error: "Authentication required",
                 hasLoadedCurrentUser: true,
@@ -30,19 +29,11 @@ export const useUserStore = create((set, get) => ({
             const response = await userService.getProfile();
             const user = response.data.data.user;
 
-            console.log("UserStore - Loaded current user:", {
-                id: user.id,
-                email: user.email,
-                avatar_url: user.avatar_url,
-            });
-
-            // Ensure avatar_url is properly set (not undefined)
             const userWithAvatar = {
                 ...user,
                 avatar_url: user.avatar_url || null,
             };
 
-            // Sync the complete user data to authStore
             const authStore = useAuthStore.getState();
             authStore.syncUserData(userWithAvatar);
 
@@ -57,7 +48,6 @@ export const useUserStore = create((set, get) => ({
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load profile";
-            console.error("Failed to load user profile:", error);
             set({
                 isLoading: false,
                 error: errorMessage,
@@ -72,16 +62,13 @@ export const useUserStore = create((set, get) => ({
             const response = await userService.getAllUsers(limit);
             const users = response.data.data.users;
 
-            console.log("UserStore - Loaded all users:", users.length);
-
-            // Filter out the current user from the list
             const currentUserId = get().currentUser?.id;
             const otherUsers = users.filter(
                 (user) => user.id !== currentUserId
             );
 
             set({
-                users: otherUsers, // Store only other users, not current user
+                users: otherUsers,
                 isLoading: false,
             });
 
@@ -89,7 +76,6 @@ export const useUserStore = create((set, get) => ({
         } catch (error) {
             const errorMessage =
                 getErrorMessage(error) || "Failed to load users";
-            console.error("Failed to load users:", error);
             set({ isLoading: false, error: errorMessage });
             throw new Error(errorMessage);
         }
@@ -135,9 +121,6 @@ export const useUserStore = create((set, get) => ({
                 throw new Error("Invalid user data in response");
             }
 
-            console.log("✅ Profile updated - New user data:", updatedUser);
-
-            // Sync updated user data to authStore
             const authStore = useAuthStore.getState();
             authStore.syncUserData(updatedUser);
 
@@ -176,7 +159,6 @@ export const useUserStore = create((set, get) => ({
                 throw new Error("Invalid user data in response");
             }
 
-            // Sync updated user data to authStore
             const authStore = useAuthStore.getState();
             authStore.syncUserData(updatedUser);
 
