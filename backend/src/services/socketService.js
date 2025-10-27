@@ -10,17 +10,29 @@ export const updateUserOnlineStatus = async (userId, isOnline) => {
 };
 
 export const handleUserDisconnect = (socket) => {
-    // Remove user from connected users
-    connectedUsers.delete(socket.userId);
+    // Only remove user if this is their current socket
+    const currentConnection = connectedUsers.get(socket.userId);
+    if (currentConnection && currentConnection.socketId === socket.id) {
+        // Remove user from connected users
+        connectedUsers.delete(socket.userId);
 
-    // Update user online status
-    updateUserOnlineStatus(socket.userId, false);
+        // Update user online status
+        updateUserOnlineStatus(socket.userId, false);
 
-    // Notify others that user went offline
-    socket.broadcast.emit("user_offline", {
-        user_id: socket.userId,
-        timestamp: new Date().toISOString(),
-    });
+        // Notify others that user went offline
+        socket.broadcast.emit("user_offline", {
+            user_id: socket.userId,
+            timestamp: new Date().toISOString(),
+        });
+
+        console.log(
+            `User ${socket.userId} fully disconnected and marked offline`
+        );
+    } else {
+        console.log(
+            `User ${socket.userId} disconnected old socket ${socket.id}, keeping new connection active`
+        );
+    }
 };
 
 export const getUserSocket = (userId) => {
@@ -57,4 +69,12 @@ export const sendToConversation = (
 
 export const getConnectedUsers = () => {
     return Array.from(connectedUsers.values()).map((conn) => conn.user);
+};
+
+export const isUserConnected = (userId) => {
+    return connectedUsers.has(userId);
+};
+
+export const getUserConnectionInfo = (userId) => {
+    return connectedUsers.get(userId);
 };

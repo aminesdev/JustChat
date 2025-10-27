@@ -153,62 +153,71 @@ export const messageRepository = {
     },
 
     markAllAsRead: async (conversation_id, reader_id) => {
-        // Find all unread messages in the conversation where the reader is not the sender
-        // AND where no read receipt exists for this reader
-        const unreadMessages = await prisma.message.findMany({
-            where: {
-                conversation_id,
-                sender_id: { not: reader_id },
-                read_receipts: {
-                    none: {
-                        reader_id: reader_id,
-                    },
-                },
-            },
-            select: {
-                id: true,
-            },
-        });
-
-        const readReceipts = [];
-        const now = new Date();
-
-        // Only create read receipts for messages that don't already have them
-        for (const message of unreadMessages) {
-            try {
-                const receipt = await prisma.readReceipt.create({
-                    data: {
-                        message_id: message.id,
-                        reader_id: reader_id,
-                        read_at: now,
-                    },
-                    include: {
-                        reader: {
-                            select: {
-                                id: true,
-                                full_name: true,
-                            },
+        // Use a single query to create all read receipts at once
+        // This prevents race conditions and duplicate errors
+        const result = await prisma.$transaction(async (tx) => {
+            // Get unread messages
+            const unreadMessages = await tx.message.findMany({
+                where: {
+                    conversation_id,
+                    sender_id: { not: reader_id },
+                    read_receipts: {
+                        none: {
+                            reader_id: reader_id,
                         },
                     },
-                });
-                readReceipts.push(receipt);
-            } catch (error) {
-                // If receipt already exists (shouldn't happen due to our query filter), skip it
-                if (error.code === "P2002") {
-                    // Unique constraint violation
-                    console.log(
-                        `Read receipt already exists for message ${message.id} and reader ${reader_id}`
-                    );
-                    continue;
-                }
-                throw error;
-            }
-        }
+                },
+                select: {
+                    id: true,
+                },
+            });
 
-        return {
-            marked_count: unreadMessages.length,
-            read_receipts: readReceipts,
-        };
+            if (unreadMessages.length === 0) {
+                return {
+                    marked_count: 0,
+                    read_receipts: [],
+                };
+            }
+
+            // Create read receipts for all unread messages
+            const now = new Date();
+            const readReceiptData = unreadMessages.map((message) => ({
+                message_id: message.id,
+                reader_id: reader_id,
+                read_at: now,
+            }));
+
+            // Use createMany with skipDuplicates to avoid unique constraint errors
+            await tx.readReceipt.createMany({
+                data: readReceiptData,
+                skipDuplicates: true, // This prevents duplicate errors
+            });
+
+            // Get the created read receipts
+            const readReceipts = await tx.readReceipt.findMany({
+                where: {
+                    message_id: {
+                        in: unreadMessages.map((m) => m.id),
+                    },
+                    reader_id: reader_id,
+                },
+                include: {
+                    reader: {
+                        select: {
+                            id: true,
+                            full_name: true,
+                        },
+                    },
+                },
+            });
+
+            return {
+                marked_count: unreadMessages.length,
+                read_receipts: readReceipts,
+            };
+        });
+
+        return result;
     },
 
     getUnreadCountAfterMark: async (conversation_id, user_id) => {

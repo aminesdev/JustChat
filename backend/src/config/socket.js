@@ -23,6 +23,9 @@ export function initializeSocket(server) {
         },
         pingTimeout: 60000,
         pingInterval: 25000,
+        connectionStateRecovery: {
+            maxDisconnectionDuration: 120000, // 2 minutes
+        },
     });
 
     setupSocketMiddleware();
@@ -48,9 +51,24 @@ function setupSocketMiddleware() {
 // Main connection handler
 function setupConnectionHandlers() {
     io.on("connection", (socket) => {
+        // Check if user already has an active connection
+        const existingConnection = connectedUsers.get(socket.userId);
+        if (existingConnection) {
+            console.log(
+                `User ${socket.userId} already connected, disconnecting previous socket ${existingConnection.socketId}`
+            );
+            // Disconnect the previous socket
+            const previousSocket = io.sockets.sockets.get(
+                existingConnection.socketId
+            );
+            if (previousSocket) {
+                previousSocket.disconnect(true);
+            }
+        }
+
         console.log(`User ${socket.userId} connected with socket ${socket.id}`);
 
-        // Add user to connected users
+        // Add user to connected users (replace existing)
         connectedUsers.set(socket.userId, {
             socketId: socket.id,
             user: socket.user,
@@ -82,13 +100,16 @@ function setupConnectionHandlers() {
             success: true,
             message: "Connected to real-time server",
             user: socket.user,
+            socket_id: socket.id,
         });
 
-        // Notify others user came online
-        socket.broadcast.emit("user_online", {
-            user_id: socket.userId,
-            user: socket.user,
-            timestamp: new Date().toISOString(),
-        });
+        // Notify others user came online (only if this is a new connection)
+        if (!existingConnection) {
+            socket.broadcast.emit("user_online", {
+                user_id: socket.userId,
+                user: socket.user,
+                timestamp: new Date().toISOString(),
+            });
+        }
     });
 }

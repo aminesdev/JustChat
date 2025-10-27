@@ -6,6 +6,7 @@ export const socketAuthMiddleware = async (socket, next) => {
         const token = socket.handshake.auth.token;
 
         if (!token) {
+            console.log("Socket authentication failed: No token provided");
             return next(new Error("Authentication error: No token provided"));
         }
 
@@ -13,6 +14,9 @@ export const socketAuthMiddleware = async (socket, next) => {
         const user = await userRepository.findById(decoded.userId);
 
         if (!user) {
+            console.log(
+                `Socket authentication failed: User ${decoded.userId} not found`
+            );
             return next(new Error("Authentication error: User not found"));
         }
 
@@ -24,9 +28,12 @@ export const socketAuthMiddleware = async (socket, next) => {
             avatar_url: user.avatar_url,
         };
 
+        console.log(
+            `Socket authentication successful for user ${socket.userId}`
+        );
         next();
     } catch (error) {
-        console.error("Socket authentication error:", error);
+        console.error("Socket authentication error:", error.message);
         next(new Error("Authentication error: Invalid token"));
     }
 };

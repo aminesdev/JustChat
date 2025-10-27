@@ -1,7 +1,6 @@
 import prisma from "../config/database.js";
 
 export const readReceiptRepository = {
-
     upsert: async (receiptData) => {
         return await prisma.readReceipt.upsert({
             where: {
@@ -25,6 +24,13 @@ export const readReceiptRepository = {
         });
     },
 
+    createMany: async (receiptsData) => {
+        return await prisma.readReceipt.createMany({
+            data: receiptsData,
+            skipDuplicates: true, // Prevent duplicate errors
+        });
+    },
+
     findByMessageAndReader: async (message_id, reader_id) => {
         return await prisma.readReceipt.findUnique({
             where: {
@@ -34,5 +40,20 @@ export const readReceiptRepository = {
                 },
             },
         });
+    },
+
+    exists: async (message_id, reader_id) => {
+        const receipt = await prisma.readReceipt.findUnique({
+            where: {
+                message_id_reader_id: {
+                    message_id,
+                    reader_id,
+                },
+            },
+            select: {
+                id: true,
+            },
+        });
+        return !!receipt;
     },
 };

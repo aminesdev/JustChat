@@ -7,7 +7,6 @@ import {
 } from "../utils/jwt.js";
 
 export const tokenService = {
-
     generateAuthTokens: async (userId) => {
         const accessToken = generateAccessToken(userId);
         const refreshToken = generateRefreshToken(userId);
@@ -49,6 +48,7 @@ export const tokenService = {
         try {
             return verifyAccessToken(token);
         } catch (error) {
+            console.error("Token validation error:", error.message);
             throw new Error("INVALID_ACCESS_TOKEN");
         }
     },
@@ -62,7 +62,7 @@ export const tokenService = {
             is_expired: new Date() > token.expires_at,
         }));
     },
-    
+
     cleanupExpiredTokens: async () => {
         const result = await tokenRepository.cleanupExpiredTokens();
         return { deletedCount: result.count };
