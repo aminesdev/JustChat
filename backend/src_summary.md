@@ -91,22 +91,58 @@ export default app;
 ```js
 import { v2 as cloudinary } from "cloudinary";
 
+// Configure Cloudinary with better connection settings
 cloudinary.config({
     cloud_name: process.env.CLOUD_NAME,
     api_key: process.env.CLOUD_API_KEY,
     api_secret: process.env.CLOUD_API_SECRET,
+    timeout: 30000, // 30 seconds timeout
+    secure: true,
 });
+
+// Store the configuration state
+let cloudinaryConfigured = false;
 
 export async function testCloudinary() {
     try {
         const result = await cloudinary.api.ping();
         console.log("Cloudinary configuration successful!");
         console.log("Status:", result.status);
+        cloudinaryConfigured = true;
+        return true;
     } catch (error) {
         console.log("Cloudinary configuration failed:");
         console.log("Error:", error.message);
-        throw new Error("CLOUDINARY_CONFIG_ERROR");
+        cloudinaryConfigured = false;
+        return false;
     }
+}
+
+// Reset function to reinitialize if needed
+export async function resetCloudinary() {
+    try {
+        // Reconfigure cloudinary
+        cloudinary.config({
+            cloud_name: process.env.CLOUD_NAME,
+            api_key: process.env.CLOUD_API_KEY,
+            api_secret: process.env.CLOUD_API_SECRET,
+            timeout: 30000,
+            secure: true,
+        });
+
+        const result = await cloudinary.api.ping();
+        cloudinaryConfigured = true;
+        console.log("Cloudinary reset successful");
+        return true;
+    } catch (error) {
+        cloudinaryConfigured = false;
+        console.log("Cloudinary reset failed:", error.message);
+        return false;
+    }
+}
+
+export function isCloudinaryConfigured() {
+    return cloudinaryConfigured;
 }
 
 export default cloudinary;
@@ -117,18 +153,145 @@ export default cloudinary;
 ```js
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+// Configure Prisma with optimized settings for Neon
+const prisma = new PrismaClient({
+    log:
+        process.env.NODE_ENV === "development"
+            ? ["query", "error", "warn"]
+            : ["error"],
+    errorFormat: "minimal",
+    // Connection pool optimization
+    transactionOptions: {
+        maxWait: 10000, // 10 seconds
+        timeout: 30000, // 30 seconds
+    },
+});
+
+// Connection management
+let isConnected = false;
+let connectionRetries = 0;
+const MAX_RETRIES = 5;
 
 export default prisma;
 
 export async function connectDb() {
     try {
-        await prisma.$connect();
+        // Test connection with a simple query
+        await prisma.$queryRaw`SELECT 1`;
         console.log("PostgreSQL Connected via Prisma");
+        isConnected = true;
+        connectionRetries = 0;
+        return true;
     } catch (err) {
-        console.log("Database connection error", err.message);
-        process.exit(1);
+        console.log("Database connection error:", err.message);
+
+        if (connectionRetries < MAX_RETRIES) {
+            connectionRetries++;
+            const delay = Math.min(2000 * connectionRetries, 10000); // Max 10 seconds
+            console.log(
+                `Retrying database connection (${connectionRetries}/${MAX_RETRIES}) in ${delay}ms...`
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            return connectDb();
+        } else {
+            console.error("Max database connection retries reached");
+            throw new Error(
+                "Database connection failed after multiple retries"
+            );
+        }
     }
+}
+
+// Health check with timeout
+export async function checkDbHealth() {
+    try {
+        // Use Promise.race to timeout the health check
+        const healthCheck = prisma.$queryRaw`SELECT 1`;
+        const timeout = new Promise((_, reject) =>
+            setTimeout(
+                () => reject(new Error("Database health check timeout")),
+                5000
+            )
+        );
+
+        await Promise.race([healthCheck, timeout]);
+        return {
+            healthy: true,
+            timestamp: new Date().toISOString(),
+            connection_retries: connectionRetries,
+        };
+    } catch (error) {
+        console.error("Database health check failed:", error.message);
+        return {
+            healthy: false,
+            error: error.message,
+            timestamp: new Date().toISOString(),
+            connection_retries: connectionRetries,
+        };
+    }
+}
+
+// Connection pool monitoring
+export function getConnectionStats() {
+    return {
+        isConnected,
+        connectionRetries,
+        timestamp: new Date().toISOString(),
+    };
+}
+
+// Graceful shutdown
+export async function disconnectDb() {
+    try {
+        await prisma.$disconnect();
+        isConnected = false;
+        console.log("Database disconnected gracefully");
+    } catch (error) {
+        console.error("Error disconnecting database:", error);
+    }
+}
+
+// Automatic reconnection for queries with retry logic
+export async function executeWithRetry(operation, maxRetries = 3) {
+    let lastError;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await operation();
+        } catch (error) {
+            lastError = error;
+
+            // Check if it's a connection error
+            if (error.code === "P1001" || error.code === "P2024") {
+                console.log(
+                    `Database connection error on attempt ${attempt}/${maxRetries}, retrying...`
+                );
+
+                if (attempt < maxRetries) {
+                    // Wait before retry (exponential backoff)
+                    const delay = Math.min(
+                        1000 * Math.pow(2, attempt - 1),
+                        10000
+                    );
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+
+                    // Try to reconnect
+                    try {
+                        await connectDb();
+                    } catch (reconnectError) {
+                        console.log(
+                            "Reconnection failed, continuing with retry..."
+                        );
+                    }
+                }
+            } else {
+                // Non-connection error, don't retry
+                throw error;
+            }
+        }
+    }
+
+    throw lastError;
 }
 
 ```
@@ -182,6 +345,132 @@ passport.use(
 );
 
 export default passport;
+
+```
+
+## File: config/socket.js
+```js
+import { Server } from "socket.io";
+import { socketAuthMiddleware } from "../middlewares/socketAuth.js";
+import { setupUserHandlers } from "../handlers/userHandlers.js";
+import { setupConversationHandlers } from "../handlers/conversationHandlers.js";
+import { setupMessageHandlers } from "../handlers/messageHandlers.js";
+import { setupTypingHandlers } from "../handlers/typingHandlers.js";
+import {
+    handleUserDisconnect,
+    updateUserOnlineStatus,
+    sendPendingNotifications,
+    checkPendingDeliveries,
+} from "../services/socketService.js";
+
+// Global variables
+let io = null;
+export const connectedUsers = new Map();
+
+// Initialize Socket.io server
+export function initializeSocket(server) {
+    io = new Server(server, {
+        cors: {
+            origin: process.env.CLIENT_URL || "http://localhost:5176",
+            methods: ["GET", "POST"],
+            credentials: true,
+        },
+        pingTimeout: 60000,
+        pingInterval: 25000,
+        connectionStateRecovery: {
+            maxDisconnectionDuration: 120000,
+        },
+    });
+
+    setupSocketMiddleware();
+    setupConnectionHandlers();
+
+    console.log("Socket.io server initialized");
+    return io;
+}
+
+// Get IO instance
+export function getIO() {
+    if (!io) {
+        throw new Error("Socket.io not initialized");
+    }
+    return io;
+}
+
+// Socket middleware setup
+function setupSocketMiddleware() {
+    io.use(socketAuthMiddleware);
+}
+
+// Main connection handler
+function setupConnectionHandlers() {
+    io.on("connection", (socket) => {
+        // Check if user already has an active connection
+        const existingConnection = connectedUsers.get(socket.userId);
+        if (existingConnection) {
+            console.log(
+                `User ${socket.userId} already connected, disconnecting previous socket ${existingConnection.socketId}`
+            );
+            // Disconnect the previous socket
+            const previousSocket = io.sockets.sockets.get(
+                existingConnection.socketId
+            );
+            if (previousSocket) {
+                previousSocket.disconnect(true);
+            }
+        }
+
+        console.log(`User ${socket.userId} connected with socket ${socket.id}`);
+
+        // Add user to connected users (replace existing)
+        connectedUsers.set(socket.userId, {
+            socketId: socket.id,
+            user: socket.user,
+            connectedAt: new Date(),
+        });
+
+        // Update user online status
+        updateUserOnlineStatus(socket.userId, true);
+
+        // Send pending notifications and check deliveries
+        sendPendingNotifications(socket.userId);
+        checkPendingDeliveries(socket.userId);
+
+        // Setup all event handlers
+        setupUserHandlers(socket);
+        setupConversationHandlers(socket);
+        setupMessageHandlers(socket);
+        setupTypingHandlers(socket);
+
+        // Handle disconnect
+        socket.on("disconnect", (reason) => {
+            console.log(`User ${socket.userId} disconnected: ${reason}`);
+            handleUserDisconnect(socket);
+        });
+
+        // Handle errors
+        socket.on("error", (error) => {
+            console.error(`Socket error for user ${socket.userId}:`, error);
+        });
+
+        // Notify successful connection
+        socket.emit("connection_success", {
+            success: true,
+            message: "Connected to real-time server",
+            user: socket.user,
+            socket_id: socket.id,
+        });
+
+        // Notify others user came online (only if this is a new connection)
+        if (!existingConnection) {
+            socket.broadcast.emit("user_online", {
+                user_id: socket.userId,
+                user: socket.user,
+                timestamp: new Date().toISOString(),
+            });
+        }
+    });
+}
 
 ```
 
@@ -1038,6 +1327,8 @@ import {
 } from "../services/conversationService.js";
 import { successResponse, createdResponse } from "../utils/responseHandler.js";
 import { handleConversationError } from "../utils/errorHandler.js";
+import { getIO } from "../config/socket.js";
+import { sendToUser } from "../services/socketService.js";
 
 export const createConversation = async (req, res) => {
     try {
@@ -1048,6 +1339,20 @@ export const createConversation = async (req, res) => {
             user1_id,
             user2_id
         );
+
+        // Trigger real-time conversation creation event
+        const io = getIO();
+        io.emit("conversation_created", {
+            conversation,
+            created_by: user1_id,
+            created_at: new Date().toISOString(),
+        });
+
+        // Specifically notify the other user if they're online
+        sendToUser(user2_id, "new_conversation", {
+            conversation,
+            created_by: req.user,
+        });
 
         createdResponse(res, "Conversation created successfully", {
             conversation,
@@ -1103,7 +1408,30 @@ export const deleteConversation = async (req, res) => {
         const user_id = req.user.userId;
         const { id } = req.params;
 
+        // Get conversation details before deletion
+        const conversation = await getConversationService(id, user_id);
+
         const result = await deleteConversationService(id, user_id);
+
+        // Trigger real-time conversation deletion event
+        const io = getIO();
+        const otherUserId =
+            conversation.user1_id === user_id
+                ? conversation.user2_id
+                : conversation.user1_id;
+
+        io.emit("conversation_deleted", {
+            conversation_id: id,
+            deleted_by: user_id,
+            deleted_at: new Date().toISOString(),
+            participants: [user_id, otherUserId],
+        });
+
+        // Specifically notify the other user if they're online
+        sendToUser(otherUserId, "conversation_deleted", {
+            conversation_id: id,
+            deleted_by: req.user,
+        });
 
         successResponse(res, result.message);
     } catch (error) {
@@ -1478,6 +1806,7 @@ import {
     handleProfileError,
     handleCloudinaryError,
 } from "../utils/errorHandler.js";
+import { getIO } from "../config/socket.js";
 
 export const updateProfile = async (req, res) => {
     try {
@@ -1489,6 +1818,18 @@ export const updateProfile = async (req, res) => {
         };
 
         const updatedUser = await updateProfileService(userId, updateData);
+
+        // Trigger real-time profile update event
+        const io = getIO();
+        io.emit("user_profile_updated", {
+            user_id: userId,
+            user: updatedUser,
+            updated_at: new Date().toISOString(),
+            updated_fields: {
+                full_name: !!updateData.full_name,
+                avatar_url: !!req.file,
+            },
+        });
 
         successResponse(res, "Profile updated successfully", {
             user: updatedUser,
@@ -1526,6 +1867,7 @@ import {
 } from "../services/fileStorageService.js";
 import { successResponse } from "../utils/responseHandler.js";
 import { handleCloudinaryError } from "../utils/errorHandler.js";
+import { resetCloudinary } from "../config/cloudinary.js";
 
 export const uploadFile = async (req, res) => {
     try {
@@ -1536,12 +1878,26 @@ export const uploadFile = async (req, res) => {
             });
         }
 
+        // Validate file size (10MB limit)
+        if (req.file.size > 10 * 1024 * 1024) {
+            return res.status(400).json({
+                success: false,
+                msg: "File size too large. Maximum size: 10MB",
+            });
+        }
+
         const folder = req.body.type === "profile" ? "profiles" : "files";
+        console.log(
+            `Starting upload for file: ${req.file.originalname}, size: ${req.file.size} bytes`
+        );
+
         const result = await uploadFileService(
             req.file.buffer,
             req.file.originalname,
             folder
         );
+
+        console.log(`Upload completed successfully: ${result.public_id}`);
 
         successResponse(res, "File uploaded successfully", {
             url: result.secure_url,
@@ -1552,6 +1908,17 @@ export const uploadFile = async (req, res) => {
             bytes: result.bytes,
         });
     } catch (error) {
+        console.error("Upload controller error:", error.message);
+
+        // Try to reset Cloudinary on timeout errors
+        if (
+            error.message === "UPLOAD_TIMEOUT" ||
+            error.message === "UPLOAD_STREAM_ERROR"
+        ) {
+            console.log("Attempting to reset Cloudinary connection...");
+            await resetCloudinary();
+        }
+
         handleCloudinaryError(res, error);
     }
 };
@@ -1566,15 +1933,69 @@ export const uploadImage = async (req, res) => {
             });
         }
 
+        // Validate file size (5MB limit for images)
+        if (req.file.size > 5 * 1024 * 1024) {
+            return res.status(400).json({
+                success: false,
+                msg: "Image size too large. Maximum size: 5MB",
+            });
+        }
+
+        // Validate file type
+        if (!req.file.mimetype.startsWith("image/")) {
+            return res.status(400).json({
+                success: false,
+                msg: "Invalid file type. Only image files are allowed.",
+            });
+        }
+
         const folder = req.body.type === "profile" ? "profiles" : "messages";
+        console.log(
+            `Starting image upload: ${req.file.originalname}, size: ${req.file.size} bytes`
+        );
+
         const result = await uploadImageService(req.file.buffer, folder);
+
+        console.log(`Image upload completed successfully: ${result.public_id}`);
 
         successResponse(res, "Image uploaded successfully", {
             url: result.secure_url,
             public_id: result.public_id,
         });
     } catch (error) {
+        console.error("Image upload controller error:", error.message);
+
+        // Try to reset Cloudinary on timeout errors
+        if (
+            error.message === "UPLOAD_TIMEOUT" ||
+            error.message === "UPLOAD_STREAM_ERROR"
+        ) {
+            console.log("Attempting to reset Cloudinary connection...");
+            await resetCloudinary();
+        }
+
         handleCloudinaryError(res, error);
+    }
+};
+
+// Add a health check endpoint for Cloudinary
+export const cloudinaryHealth = async (req, res) => {
+    try {
+        const result = await resetCloudinary();
+        if (result) {
+            successResponse(res, "Cloudinary is healthy");
+        } else {
+            res.status(503).json({
+                success: false,
+                msg: "Cloudinary is not responding",
+            });
+        }
+    } catch (error) {
+        res.status(503).json({
+            success: false,
+            msg: "Cloudinary health check failed",
+            error: error.message,
+        });
     }
 };
 
@@ -1651,6 +2072,645 @@ export const updateOnlineStatus = async (req, res) => {
 
 ```
 
+## File: handlers/conversationHandlers.js
+```js
+import { getIO } from "../config/socket.js";
+import { sendToUser } from "../services/socketService.js";
+
+export const setupConversationHandlers = (socket) => {
+    const joinedConversations = new Set();
+
+    socket.on("join_conversation", (conversationId) => {
+        if (conversationId && !joinedConversations.has(conversationId)) {
+            socket.join(`conversation:${conversationId}`);
+            joinedConversations.add(conversationId);
+            console.log(
+                `User ${socket.userId} joined conversation ${conversationId}`
+            );
+        }
+    });
+
+    socket.on("leave_conversation", (conversationId) => {
+        if (conversationId && joinedConversations.has(conversationId)) {
+            socket.leave(`conversation:${conversationId}`);
+            joinedConversations.delete(conversationId);
+            console.log(
+                `User ${socket.userId} left conversation ${conversationId}`
+            );
+        }
+    });
+
+    // Create conversation with real-time notification
+    socket.on("create_conversation", async (data, callback) => {
+        try {
+            const { user2_id } = data;
+
+            if (!user2_id) {
+                if (typeof callback === "function") {
+                    callback({
+                        success: false,
+                        error: "User ID is required",
+                    });
+                }
+                return;
+            }
+
+            const { createConversationService } = await import(
+                "../services/conversationService.js"
+            );
+
+            const conversation = await createConversationService(
+                socket.userId,
+                user2_id
+            );
+
+            // Notify both users about the new conversation
+            getIO().emit("conversation_created", {
+                conversation,
+                created_by: socket.userId,
+                created_at: new Date().toISOString(),
+            });
+
+            // Specifically notify the other user if they're online
+            sendToUser(user2_id, "new_conversation", {
+                conversation,
+                created_by: socket.user,
+            });
+
+            if (typeof callback === "function") {
+                callback({
+                    success: true,
+                    conversation,
+                });
+            }
+        } catch (error) {
+            console.error("Error creating conversation:", error);
+            if (typeof callback === "function") {
+                callback({
+                    success: false,
+                    error: error.message || "Failed to create conversation",
+                });
+            }
+        }
+    });
+
+    // Delete conversation with real-time notification
+    socket.on("delete_conversation", async (data, callback) => {
+        try {
+            const { conversation_id } = data;
+
+            if (!conversation_id) {
+                if (typeof callback === "function") {
+                    callback({
+                        success: false,
+                        error: "Conversation ID is required",
+                    });
+                }
+                return;
+            }
+
+            const { deleteConversationService, getConversationService } =
+                await import("../services/conversationService.js");
+
+            // Get conversation details before deletion
+            const conversation = await getConversationService(
+                conversation_id,
+                socket.userId
+            );
+
+            await deleteConversationService(conversation_id, socket.userId);
+
+            // Notify both users about the deleted conversation
+            const otherUserId =
+                conversation.user1_id === socket.userId
+                    ? conversation.user2_id
+                    : conversation.user1_id;
+
+            getIO().emit("conversation_deleted", {
+                conversation_id,
+                deleted_by: socket.userId,
+                deleted_at: new Date().toISOString(),
+                participants: [socket.userId, otherUserId],
+            });
+
+            // Specifically notify the other user if they're online
+            sendToUser(otherUserId, "conversation_deleted", {
+                conversation_id,
+                deleted_by: socket.user,
+            });
+
+            // Leave the conversation room
+            socket.leave(`conversation:${conversation_id}`);
+            joinedConversations.delete(conversation_id);
+
+            if (typeof callback === "function") {
+                callback({
+                    success: true,
+                    message: "Conversation deleted successfully",
+                });
+            }
+        } catch (error) {
+            console.error("Error deleting conversation:", error);
+            if (typeof callback === "function") {
+                callback({
+                    success: false,
+                    error: error.message || "Failed to delete conversation",
+                });
+            }
+        }
+    });
+
+    // Clean up joined conversations on disconnect
+    socket.on("disconnect", () => {
+        joinedConversations.clear();
+    });
+};
+
+```
+
+## File: handlers/messageHandlers.js
+```js
+import { getIO, connectedUsers } from "../config/socket.js";
+import {
+    getUserSocket,
+    sendToConversation,
+} from "../services/socketService.js";
+
+export const setupMessageHandlers = (socket) => {
+    socket.on("send_message", async (data, callback) => {
+        try {
+            const {
+                conversation_id,
+                message_text,
+                message_type = "TEXT",
+                file_url,
+            } = data;
+
+            if (!conversation_id) {
+                if (typeof callback === "function") {
+                    callback({
+                        success: false,
+                        error: "Conversation ID is required",
+                    });
+                }
+                return;
+            }
+
+            const { createMessageService } = await import(
+                "../services/messageService.js"
+            );
+
+            const message = await createMessageService({
+                conversation_id,
+                sender_id: socket.userId,
+                message_text,
+                message_type,
+                file_url,
+            });
+
+            // Get conversation participants
+            const { conversationRepository } = await import(
+                "../repositories/conversationRepository.js"
+            );
+            const conversation =
+                await conversationRepository.findByIdWithAccess(
+                    conversation_id,
+                    socket.userId
+                );
+
+            const otherUserId =
+                conversation.user1_id === socket.userId
+                    ? conversation.user2_id
+                    : conversation.user1_id;
+            const isRecipientOnline = connectedUsers.has(otherUserId);
+
+            // Emit to all users in the conversation room except sender
+            socket.to(`conversation:${conversation_id}`).emit("new_message", {
+                message,
+                conversation_id,
+                is_delivered: isRecipientOnline,
+            });
+
+            // Also emit to sender for consistency
+            socket.emit("message_sent", {
+                message,
+                conversation_id,
+                is_delivered: isRecipientOnline,
+            });
+
+            // Update delivery status if recipient is online
+            if (isRecipientOnline) {
+                const { messageRepository } = await import(
+                    "../repositories/messageRepository.js"
+                );
+                await messageRepository.markAsDelivered(
+                    conversation_id,
+                    otherUserId
+                );
+
+                // Notify sender that message was delivered
+                socket.emit("message_delivered", {
+                    message_id: message.id,
+                    conversation_id,
+                    delivered_at: new Date().toISOString(),
+                });
+            }
+
+            // Notify participants about new message (for sidebar updates)
+            getIO().emit("conversation_updated", {
+                conversation_id,
+                last_message: message,
+                updated_at: new Date().toISOString(),
+                has_unread_messages: !isRecipientOnline,
+            });
+
+            if (typeof callback === "function") {
+                callback({
+                    success: true,
+                    message: message,
+                    is_delivered: isRecipientOnline,
+                });
+            }
+        } catch (error) {
+            console.error("Error sending message:", error);
+            if (typeof callback === "function") {
+                callback({
+                    success: false,
+                    error: error.message || "Failed to send message",
+                });
+            }
+        }
+    });
+
+    socket.on("mark_as_read", async (data, callback) => {
+        try {
+            const { message_id, conversation_id } = data;
+
+            if (!message_id || !conversation_id) {
+                if (typeof callback === "function") {
+                    callback({
+                        success: false,
+                        error: "Message ID and Conversation ID are required",
+                    });
+                }
+                return;
+            }
+
+            const { markAsReadService } = await import(
+                "../services/messageService.js"
+            );
+
+            const readReceipt = await markAsReadService(
+                message_id,
+                socket.userId
+            );
+
+            // Notify the sender that their message was read
+            const senderSocket = getUserSocket(readReceipt.message.sender_id);
+            if (senderSocket) {
+                senderSocket.emit("message_read", {
+                    message_id,
+                    conversation_id,
+                    read_by: socket.user,
+                    read_at: readReceipt.read_at,
+                });
+            }
+
+            if (typeof callback === "function") {
+                callback({
+                    success: true,
+                    read_receipt: readReceipt,
+                });
+            }
+        } catch (error) {
+            console.error("Error marking message as read:", error);
+            if (typeof callback === "function") {
+                callback({
+                    success: false,
+                    error: error.message || "Failed to mark message as read",
+                });
+            }
+        }
+    });
+
+    socket.on("mark_all_as_read", async (data, callback) => {
+        try {
+            const { conversation_id } = data;
+
+            if (!conversation_id) {
+                if (typeof callback === "function") {
+                    callback({
+                        success: false,
+                        error: "Conversation ID is required",
+                    });
+                }
+                return;
+            }
+
+            const { markAllAsReadService } = await import(
+                "../services/messageService.js"
+            );
+
+            const result = await markAllAsReadService(
+                conversation_id,
+                socket.userId
+            );
+
+            // Notify other participants in the conversation
+            socket
+                .to(`conversation:${conversation_id}`)
+                .emit("all_messages_read", {
+                    conversation_id,
+                    read_by: socket.userId,
+                    read_at: new Date().toISOString(),
+                });
+
+            if (typeof callback === "function") {
+                callback({
+                    success: true,
+                    ...result,
+                });
+            }
+        } catch (error) {
+            console.error("Error marking all messages as read:", error);
+            if (typeof callback === "function") {
+                callback({
+                    success: false,
+                    error: error.message || "Failed to mark messages as read",
+                });
+            }
+        }
+    });
+
+    // Real-time message editing
+    socket.on("edit_message", async (data, callback) => {
+        try {
+            const { message_id, conversation_id, message_text } = data;
+
+            if (!message_id || !conversation_id || !message_text) {
+                if (typeof callback === "function") {
+                    callback({
+                        success: false,
+                        error: "Message ID, Conversation ID, and message text are required",
+                    });
+                }
+                return;
+            }
+
+            const { updateMessageService } = await import(
+                "../services/messageService.js"
+            );
+
+            const updatedMessage = await updateMessageService(
+                message_id,
+                socket.userId,
+                {
+                    message_text: message_text.trim(),
+                }
+            );
+
+            // Notify all participants in the conversation
+            sendToConversation(conversation_id, "message_edited", {
+                message: updatedMessage,
+                conversation_id,
+                edited_by: socket.userId,
+                edited_at: new Date().toISOString(),
+            });
+
+            if (typeof callback === "function") {
+                callback({
+                    success: true,
+                    message: updatedMessage,
+                });
+            }
+        } catch (error) {
+            console.error("Error editing message:", error);
+            if (typeof callback === "function") {
+                callback({
+                    success: false,
+                    error: error.message || "Failed to edit message",
+                });
+            }
+        }
+    });
+
+    // Real-time message deletion
+    socket.on("delete_message", async (data, callback) => {
+        try {
+            const { message_id, conversation_id } = data;
+
+            if (!message_id || !conversation_id) {
+                if (typeof callback === "function") {
+                    callback({
+                        success: false,
+                        error: "Message ID and Conversation ID are required",
+                    });
+                }
+                return;
+            }
+
+            const { deleteMessageService } = await import(
+                "../services/messageService.js"
+            );
+
+            const result = await deleteMessageService(
+                message_id,
+                socket.userId
+            );
+
+            // Notify all participants in the conversation
+            sendToConversation(conversation_id, "message_deleted", {
+                message_id,
+                conversation_id,
+                deleted_by: socket.userId,
+                deleted_at: new Date().toISOString(),
+                deleted_message: result,
+            });
+
+            if (typeof callback === "function") {
+                callback({
+                    success: true,
+                    message: result,
+                });
+            }
+        } catch (error) {
+            console.error("Error deleting message:", error);
+            if (typeof callback === "function") {
+                callback({
+                    success: false,
+                    error: error.message || "Failed to delete message",
+                });
+            }
+        }
+    });
+};
+
+```
+
+## File: handlers/typingHandlers.js
+```js
+const typingTimeouts = new Map();
+
+export const setupTypingHandlers = (socket) => {
+    socket.on("typing_start", (data) => {
+        const { conversation_id } = data;
+
+        if (conversation_id) {
+            // Notify other users in the conversation
+            socket.to(`conversation:${conversation_id}`).emit("user_typing", {
+                conversation_id,
+                user_id: socket.userId,
+                user: socket.user,
+                typing: true,
+            });
+
+            // Clear existing timeout
+            if (typingTimeouts.has(conversation_id)) {
+                clearTimeout(typingTimeouts.get(conversation_id));
+            }
+
+            // Set new timeout to automatically stop typing indicator
+            const timeout = setTimeout(() => {
+                socket
+                    .to(`conversation:${conversation_id}`)
+                    .emit("user_typing", {
+                        conversation_id,
+                        user_id: socket.userId,
+                        user: socket.user,
+                        typing: false,
+                    });
+                typingTimeouts.delete(conversation_id);
+            }, 3000);
+
+            typingTimeouts.set(conversation_id, timeout);
+        }
+    });
+
+    socket.on("typing_stop", (data) => {
+        const { conversation_id } = data;
+
+        if (conversation_id) {
+            // Clear timeout
+            if (typingTimeouts.has(conversation_id)) {
+                clearTimeout(typingTimeouts.get(conversation_id));
+                typingTimeouts.delete(conversation_id);
+            }
+
+            // Notify other users
+            socket.to(`conversation:${conversation_id}`).emit("user_typing", {
+                conversation_id,
+                user_id: socket.userId,
+                user: socket.user,
+                typing: false,
+            });
+        }
+    });
+
+    // Clean up timeouts on disconnect
+    socket.on("disconnect", () => {
+        typingTimeouts.forEach((timeout, conversationId) => {
+            clearTimeout(timeout);
+        });
+        typingTimeouts.clear();
+    });
+};
+
+```
+
+## File: handlers/userHandlers.js
+```js
+import { connectedUsers, getIO } from "../config/socket.js";
+import { sendToConversation } from "../services/socketService.js";
+
+export const setupUserHandlers = (socket) => {
+    socket.on("get_online_users", async (callback) => {
+        try {
+            const onlineUsers = Array.from(connectedUsers.values()).map(
+                (conn) => conn.user
+            );
+
+            if (typeof callback === "function") {
+                callback({
+                    success: true,
+                    online_users: onlineUsers,
+                });
+            }
+        } catch (error) {
+            console.error("Error getting online users:", error);
+            if (typeof callback === "function") {
+                callback({
+                    success: false,
+                    error: "Failed to get online users",
+                });
+            }
+        }
+    });
+
+    // Listen for profile updates
+    socket.on("profile_updated", async (data, callback) => {
+        try {
+            const { full_name, avatar_url } = data;
+
+            // Update user in connected users map
+            const userConnection = connectedUsers.get(socket.userId);
+            if (userConnection) {
+                if (full_name) userConnection.user.full_name = full_name;
+                if (avatar_url) userConnection.user.avatar_url = avatar_url;
+                connectedUsers.set(socket.userId, userConnection);
+            }
+
+            // Notify all users about profile update
+            getIO().emit("user_profile_updated", {
+                user_id: socket.userId,
+                user: userConnection?.user || socket.user,
+                updated_at: new Date().toISOString(),
+                updated_fields: {
+                    full_name: !!full_name,
+                    avatar_url: !!avatar_url,
+                },
+            });
+
+            // Notify all conversations this user is part of
+            const { conversationRepository } = await import(
+                "../repositories/conversationRepository.js"
+            );
+            const conversations = await conversationRepository.findByUserId(
+                socket.userId
+            );
+
+            conversations.forEach((conversation) => {
+                sendToConversation(
+                    conversation.id,
+                    "conversation_user_updated",
+                    {
+                        conversation_id: conversation.id,
+                        user_id: socket.userId,
+                        user: userConnection?.user || socket.user,
+                        updated_at: new Date().toISOString(),
+                    }
+                );
+            });
+
+            if (typeof callback === "function") {
+                callback({
+                    success: true,
+                    message: "Profile update broadcasted",
+                });
+            }
+        } catch (error) {
+            console.error("Error broadcasting profile update:", error);
+            if (typeof callback === "function") {
+                callback({
+                    success: false,
+                    error: "Failed to broadcast profile update",
+                });
+            }
+        }
+    });
+};
+
+```
+
 ## File: middlewares/auth.js
 ```js
 import { tokenService } from "../services/tokenService.js";
@@ -1670,6 +2730,50 @@ export const authenticateToken = (req, res, next) => {
         next();
     } catch (error) {
         return unauthorizedResponse(res, "Invalid or expired token");
+    }
+};
+
+```
+
+## File: middlewares/socketAuth.js
+```js
+import { tokenService } from "../services/tokenService.js";
+import { userRepository } from "../repositories/userRepository.js";
+
+export const socketAuthMiddleware = async (socket, next) => {
+    try {
+        const token = socket.handshake.auth.token;
+
+        if (!token) {
+            console.log("Socket authentication failed: No token provided");
+            return next(new Error("Authentication error: No token provided"));
+        }
+
+        const decoded = tokenService.validateAccessToken(token);
+        const user = await userRepository.findById(decoded.userId);
+
+        if (!user) {
+            console.log(
+                `Socket authentication failed: User ${decoded.userId} not found`
+            );
+            return next(new Error("Authentication error: User not found"));
+        }
+
+        socket.userId = decoded.userId;
+        socket.user = {
+            id: user.id,
+            email: user.email,
+            full_name: user.full_name,
+            avatar_url: user.avatar_url,
+        };
+
+        console.log(
+            `Socket authentication successful for user ${socket.userId}`
+        );
+        next();
+    } catch (error) {
+        console.error("Socket authentication error:", error.message);
+        next(new Error("Authentication error: Invalid token"));
     }
 };
 
@@ -2094,62 +3198,71 @@ export const messageRepository = {
     },
 
     markAllAsRead: async (conversation_id, reader_id) => {
-        // Find all unread messages in the conversation where the reader is not the sender
-        // AND where no read receipt exists for this reader
-        const unreadMessages = await prisma.message.findMany({
-            where: {
-                conversation_id,
-                sender_id: { not: reader_id },
-                read_receipts: {
-                    none: {
-                        reader_id: reader_id,
-                    },
-                },
-            },
-            select: {
-                id: true,
-            },
-        });
-
-        const readReceipts = [];
-        const now = new Date();
-
-        // Only create read receipts for messages that don't already have them
-        for (const message of unreadMessages) {
-            try {
-                const receipt = await prisma.readReceipt.create({
-                    data: {
-                        message_id: message.id,
-                        reader_id: reader_id,
-                        read_at: now,
-                    },
-                    include: {
-                        reader: {
-                            select: {
-                                id: true,
-                                full_name: true,
-                            },
+        // Use a single query to create all read receipts at once
+        // This prevents race conditions and duplicate errors
+        const result = await prisma.$transaction(async (tx) => {
+            // Get unread messages
+            const unreadMessages = await tx.message.findMany({
+                where: {
+                    conversation_id,
+                    sender_id: { not: reader_id },
+                    read_receipts: {
+                        none: {
+                            reader_id: reader_id,
                         },
                     },
-                });
-                readReceipts.push(receipt);
-            } catch (error) {
-                // If receipt already exists (shouldn't happen due to our query filter), skip it
-                if (error.code === "P2002") {
-                    // Unique constraint violation
-                    console.log(
-                        `Read receipt already exists for message ${message.id} and reader ${reader_id}`
-                    );
-                    continue;
-                }
-                throw error;
-            }
-        }
+                },
+                select: {
+                    id: true,
+                },
+            });
 
-        return {
-            marked_count: unreadMessages.length,
-            read_receipts: readReceipts,
-        };
+            if (unreadMessages.length === 0) {
+                return {
+                    marked_count: 0,
+                    read_receipts: [],
+                };
+            }
+
+            // Create read receipts for all unread messages
+            const now = new Date();
+            const readReceiptData = unreadMessages.map((message) => ({
+                message_id: message.id,
+                reader_id: reader_id,
+                read_at: now,
+            }));
+
+            // Use createMany with skipDuplicates to avoid unique constraint errors
+            await tx.readReceipt.createMany({
+                data: readReceiptData,
+                skipDuplicates: true, // This prevents duplicate errors
+            });
+
+            // Get the created read receipts
+            const readReceipts = await tx.readReceipt.findMany({
+                where: {
+                    message_id: {
+                        in: unreadMessages.map((m) => m.id),
+                    },
+                    reader_id: reader_id,
+                },
+                include: {
+                    reader: {
+                        select: {
+                            id: true,
+                            full_name: true,
+                        },
+                    },
+                },
+            });
+
+            return {
+                marked_count: unreadMessages.length,
+                read_receipts: readReceipts,
+            };
+        });
+
+        return result;
     },
 
     getUnreadCountAfterMark: async (conversation_id, user_id) => {
@@ -2174,7 +3287,6 @@ export const messageRepository = {
 import prisma from "../config/database.js";
 
 export const readReceiptRepository = {
-
     upsert: async (receiptData) => {
         return await prisma.readReceipt.upsert({
             where: {
@@ -2198,6 +3310,13 @@ export const readReceiptRepository = {
         });
     },
 
+    createMany: async (receiptsData) => {
+        return await prisma.readReceipt.createMany({
+            data: receiptsData,
+            skipDuplicates: true, // Prevent duplicate errors
+        });
+    },
+
     findByMessageAndReader: async (message_id, reader_id) => {
         return await prisma.readReceipt.findUnique({
             where: {
@@ -2207,6 +3326,21 @@ export const readReceiptRepository = {
                 },
             },
         });
+    },
+
+    exists: async (message_id, reader_id) => {
+        const receipt = await prisma.readReceipt.findUnique({
+            where: {
+                message_id_reader_id: {
+                    message_id,
+                    reader_id,
+                },
+            },
+            select: {
+                id: true,
+            },
+        });
+        return !!receipt;
     },
 };
 
@@ -3254,7 +4388,11 @@ export default router;
 ## File: routes/upload.js
 ```js
 import express from "express";
-import { uploadFile, uploadImage } from "../controllers/uploadController.js";
+import {
+    uploadFile,
+    uploadImage,
+    cloudinaryHealth,
+} from "../controllers/uploadController.js";
 import { authenticateToken } from "../middlewares/auth.js";
 import { upload } from "../middlewares/upload.js";
 
@@ -3268,6 +4406,24 @@ router.use(authenticateToken);
  *   name: Upload
  *   description: File upload endpoints
  */
+
+/**
+ * @swagger
+ * /upload/health:
+ *   get:
+ *     summary: Check Cloudinary health status
+ *     tags: [Upload]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Cloudinary is healthy
+ *       503:
+ *         description: Cloudinary is not responding
+ */
+router.get("/health", cloudinaryHealth);
+
+// ... rest of your existing routes ...
 
 /**
  * @swagger
@@ -3512,6 +4668,7 @@ import app from "./app.js";
 import dotenv from "dotenv";
 import { connectDb } from "./config/database.js";
 import { testCloudinary } from "./config/cloudinary.js";
+import { initializeSocket } from "./config/socket.js";
 
 // Load environment variables
 dotenv.config();
@@ -3530,23 +4687,26 @@ async function start() {
         await testCloudinary();
         console.log("Cloudinary configured successfully");
 
-        // Start server
-        app.listen(PORT, () => {
+        // Start HTTP server
+        const server = app.listen(PORT, () => {
             console.log(`Server running on http://localhost:${PORT}`);
-            console.log(
-                `API Documentation: http://localhost:${PORT}/api-docs`
-            );
+            console.log(`API Documentation: http://localhost:${PORT}/api-docs`);
             console.log(`Health Check: http://localhost:${PORT}/health`);
             console.log(
                 `Environment: ${process.env.NODE_ENV || "development"}`
             );
         });
+
+        // Initialize Socket.io
+        initializeSocket(server);
+        console.log("Socket.io server initialized");
     } catch (error) {
         console.error("Failed to start server:", error);
         process.exit(1);
     }
 }
 
+// Global error handlers
 process.on("uncaughtException", (error) => {
     console.error("Uncaught Exception:", error);
     process.exit(1);
@@ -3555,6 +4715,17 @@ process.on("uncaughtException", (error) => {
 process.on("unhandledRejection", (reason, promise) => {
     console.error("Unhandled Rejection at:", promise, "reason:", reason);
     process.exit(1);
+});
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+    console.log("SIGTERM received, shutting down gracefully");
+    process.exit(0);
+});
+
+process.on("SIGINT", () => {
+    console.log("SIGINT received, shutting down gracefully");
+    process.exit(0);
 });
 
 start();
@@ -3750,13 +4921,29 @@ export const checkConversationService = async (user1_id, user2_id) => {
 
 ## File: services/fileStorageService.js
 ```js
-import cloudinary from "../config/cloudinary.js";
+import cloudinary, {
+    resetCloudinary,
+    isCloudinaryConfigured,
+} from "../config/cloudinary.js";
+
+// Track upload attempts for retry logic
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 1000; // 1 second
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const uploadFileService = async (
     fileBuffer,
     originalName,
-    folder = "files"
+    folder = "files",
+    retryCount = 0
 ) => {
+    // Check if Cloudinary is configured
+    if (!isCloudinaryConfigured()) {
+        console.log("Cloudinary not configured, attempting reset...");
+        await resetCloudinary();
+    }
+
     return new Promise((resolve, reject) => {
         // Determine resource type based on file extension
         const extension = originalName.split(".").pop().toLowerCase();
@@ -3769,18 +4956,8 @@ export const uploadFileService = async (
             "bmp",
             "svg",
         ];
-        const videoExtensions = [
-            "mp4",
-            "avi",
-            "mov",
-            "wmv",
-            "flv",
-            "webm",
-            "mkv",
-        ];
-        const audioExtensions = ["mp3", "wav", "ogg", "m4a", "flac", "aac"];
 
-        let resourceType = "raw"; // Default for documents and other files
+        let resourceType = "raw";
         let transformation = [];
 
         if (imageExtensions.includes(extension)) {
@@ -3789,31 +4966,85 @@ export const uploadFileService = async (
                 { width: 800, height: 800, crop: "limit" },
                 { quality: "auto" },
             ];
-        } else if (videoExtensions.includes(extension)) {
-            resourceType = "video";
-            transformation = [{ quality: "auto" }];
-        } else if (audioExtensions.includes(extension)) {
-            resourceType = "video"; // Cloudinary uses 'video' for audio files
         }
 
+        const uploadOptions = {
+            folder: folder,
+            resource_type: resourceType,
+            allowed_formats: null,
+            transformation: transformation,
+            timeout: 30000,
+        };
+
+        console.log(
+            `Upload attempt ${
+                retryCount + 1
+            }: ${originalName}, type: ${resourceType}, folder: ${folder}, size: ${
+                fileBuffer.length
+            } bytes`
+        );
+
         const uploadStream = cloudinary.uploader.upload_stream(
-            {
-                folder: folder,
-                resource_type: resourceType,
-                allowed_formats: null, // Allow all formats
-                transformation: transformation,
-            },
-            (error, result) => {
+            uploadOptions,
+            async (error, result) => {
                 if (error) {
-                    console.error("Cloudinary upload error:", error);
-                    if (error.message.includes("File size too large")) {
+                    console.error(
+                        `Cloudinary upload error (attempt ${retryCount + 1}):`,
+                        error
+                    );
+
+                    // Retry logic for timeout errors
+                    if (
+                        (error.name === "TimeoutError" ||
+                            error.http_code === 499) &&
+                        retryCount < MAX_RETRIES
+                    ) {
+                        console.log(
+                            `Retrying upload (${
+                                retryCount + 1
+                            }/${MAX_RETRIES})...`
+                        );
+                        await delay(RETRY_DELAY * (retryCount + 1));
+                        try {
+                            const retryResult = await uploadFileService(
+                                fileBuffer,
+                                originalName,
+                                folder,
+                                retryCount + 1
+                            );
+                            resolve(retryResult);
+                        } catch (retryError) {
+                            reject(retryError);
+                        }
+                        return;
+                    }
+
+                    if (
+                        error.message.includes("File size too large") ||
+                        error.http_code === 413
+                    ) {
                         reject(new Error("FILE_TOO_LARGE"));
-                    } else if (error.message.includes("Invalid file")) {
+                    } else if (
+                        error.message.includes("Invalid file") ||
+                        error.http_code === 422
+                    ) {
                         reject(new Error("INVALID_FILE_FORMAT"));
+                    } else if (
+                        error.name === "TimeoutError" ||
+                        error.http_code === 499
+                    ) {
+                        reject(new Error("UPLOAD_TIMEOUT"));
+                    } else if (error.http_code === 401) {
+                        reject(new Error("CLOUDINARY_AUTH_ERROR"));
                     } else {
                         reject(new Error("UPLOAD_FAILED"));
                     }
                 } else {
+                    console.log(
+                        `Cloudinary upload successful (attempt ${
+                            retryCount + 1
+                        }): ${result.public_id}`
+                    );
                     resolve({
                         ...result,
                         resource_type: resourceType,
@@ -3824,7 +5055,43 @@ export const uploadFileService = async (
             }
         );
 
-        uploadStream.end(fileBuffer);
+        // Handle stream errors
+        uploadStream.on("error", async (error) => {
+            console.error(
+                `Cloudinary stream error (attempt ${retryCount + 1}):`,
+                error
+            );
+
+            if (retryCount < MAX_RETRIES) {
+                console.log(
+                    `Retrying upload due to stream error (${
+                        retryCount + 1
+                    }/${MAX_RETRIES})...`
+                );
+                await delay(RETRY_DELAY * (retryCount + 1));
+                try {
+                    const retryResult = await uploadFileService(
+                        fileBuffer,
+                        originalName,
+                        folder,
+                        retryCount + 1
+                    );
+                    resolve(retryResult);
+                } catch (retryError) {
+                    reject(retryError);
+                }
+            } else {
+                reject(new Error("UPLOAD_STREAM_ERROR"));
+            }
+        });
+
+        // Write the buffer to the stream
+        try {
+            uploadStream.end(fileBuffer);
+        } catch (streamError) {
+            console.error("Stream write error:", streamError);
+            reject(new Error("STREAM_WRITE_ERROR"));
+        }
     });
 };
 
@@ -3832,6 +5099,7 @@ export const deleteFileService = async (publicId, resourceType = "image") => {
     try {
         const result = await cloudinary.uploader.destroy(publicId, {
             resource_type: resourceType,
+            timeout: 15000,
         });
 
         if (result.result !== "ok") {
@@ -3862,6 +5130,8 @@ export const deleteImageService = async (publicId) => {
 import { messageRepository } from "../repositories/messageRepository.js";
 import { readReceiptRepository } from "../repositories/readReceiptRepository.js";
 import { conversationRepository } from "../repositories/conversationRepository.js";
+import { connectedUsers } from "../config/socket.js";
+import { sendToUser } from "./socketService.js";
 
 export const createMessageService = async (messageData) => {
     const {
@@ -3891,7 +5161,7 @@ export const createMessageService = async (messageData) => {
         if (file_url) {
             throw new Error("TEXT_MESSAGES_CANNOT_HAVE_FILE_URL");
         }
-    } else if (["IMAGE", "FILE", "VIDEO", "AUDIO"].includes(message_type)) {
+    } else if (message_type === "IMAGE") {
         if (!file_url) {
             throw new Error("FILE_URL_REQUIRED");
         }
@@ -3908,207 +5178,30 @@ export const createMessageService = async (messageData) => {
         file_name,
         file_size,
         file_type,
-        is_delivered: false,
+        is_delivered: false, // Will be updated in real-time if recipient is online
     });
 
-    return message;
-};
+    // Check if recipient is online and update delivery status immediately
+    const otherUserId =
+        conversation.user1_id === sender_id
+            ? conversation.user2_id
+            : conversation.user1_id;
+    const isRecipientOnline = connectedUsers.has(otherUserId);
 
-export const getMessagesService = async (
-    conversation_id,
-    user_id,
-    page = 1,
-    limit = 50
-) => {
-    page = Math.max(1, parseInt(page));
-    limit = Math.min(Math.max(1, parseInt(limit)), 100);
+    if (isRecipientOnline) {
+        // Mark as delivered immediately
+        await messageRepository.markAsDelivered(conversation_id, otherUserId);
 
-    const conversation = await conversationRepository.findByIdWithAccess(
-        conversation_id,
-        user_id
-    );
-    if (!conversation) {
-        throw new Error("CONVERSATION_NOT_FOUND_OR_ACCESS_DENIED");
-    }
-
-    const skip = (page - 1) * limit;
-
-    try {
-        const messages = await messageRepository.findByConversation(
-            conversation_id,
-            skip,
-            limit
-        );
-
-        if (messages.length > 0) {
-            try {
-                await messageRepository.markAsDelivered(
-                    conversation_id,
-                    user_id
-                );
-            } catch (deliveryError) {
-                console.error(
-                    "Error marking messages as delivered:",
-                    deliveryError
-                );
-            }
-        }
-
-        return messages.reverse();
-    } catch (error) {
-        console.error("Error in getMessagesService:", error);
-        throw new Error("DATABASE_ERROR");
-    }
-};
-
-export const getMessageService = async (message_id, user_id) => {
-    const message = await messageRepository.findByIdWithAccess(
-        message_id,
-        user_id
-    );
-    if (!message) {
-        throw new Error("MESSAGE_NOT_FOUND");
+        // Update the message object to reflect delivery status
+        message.is_delivered = true;
+        message.delivered_at = new Date();
     }
 
     return message;
 };
 
-export const updateMessageService = async (message_id, user_id, updateData) => {
-    const { message_text } = updateData;
-
-    const existingMessage = await messageRepository.findByIdWithAccess(
-        message_id,
-        user_id
-    );
-
-    if (!existingMessage || existingMessage.sender_id !== user_id) {
-        throw new Error("MESSAGE_NOT_FOUND_OR_NOT_EDITABLE");
-    }
-
-    if (existingMessage.message_type !== "TEXT") {
-        throw new Error("ONLY_TEXT_MESSAGES_CAN_BE_EDITED");
-    }
-
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    if (existingMessage.created_at < fiveMinutesAgo) {
-        throw new Error("MESSAGE_EDIT_TIMEOUT");
-    }
-
-    const updatedMessage = await messageRepository.update(message_id, {
-        message_text,
-    });
-
-    return updatedMessage;
-};
-
-export const deleteMessageService = async (message_id, user_id) => {
-    const existingMessage = await messageRepository.findByIdWithAccess(
-        message_id,
-        user_id
-    );
-
-    if (!existingMessage || existingMessage.sender_id !== user_id) {
-        throw new Error("MESSAGE_NOT_FOUND_OR_NOT_DELETABLE");
-    }
-
-    if (existingMessage.message_type === "TEXT") {
-        const deletedMessage = await messageRepository.update(message_id, {
-            message_text: "This message was deleted",
-            file_url: null,
-            file_name: null,
-            file_size: null,
-            file_type: null,
-        });
-        return deletedMessage;
-    } else {
-        // For file messages, we keep the file info but mark as deleted
-        const deletedMessage = await messageRepository.update(message_id, {
-            message_text: "This file was deleted",
-            file_url: null,
-            file_name: null,
-            file_size: null,
-            file_type: null,
-        });
-        return deletedMessage;
-    }
-};
-
-export const markAsReadService = async (message_id, user_id) => {
-    const message = await messageRepository.findByIdWithAccess(
-        message_id,
-        user_id
-    );
-
-    if (!message) {
-        throw new Error("MESSAGE_NOT_FOUND");
-    }
-
-    if (message.sender_id === user_id) {
-        throw new Error("CANNOT_MARK_OWN_MESSAGE_READ");
-    }
-
-    const readReceipt = await readReceiptRepository.upsert({
-        message_id,
-        reader_id: user_id,
-        read_at: new Date(),
-    });
-
-    return readReceipt;
-};
-
-export const getUnreadCountService = async (conversation_id, user_id) => {
-    const conversation = await conversationRepository.findByIdWithAccess(
-        conversation_id,
-        user_id
-    );
-
-    if (!conversation) {
-        throw new Error("CONVERSATION_NOT_FOUND_OR_ACCESS_DENIED");
-    }
-
-    try {
-        const count = await messageRepository.countUnread(
-            conversation_id,
-            user_id
-        );
-        return { unread_count: count };
-    } catch (error) {
-        console.error("Error in getUnreadCountService:", error);
-        throw new Error("DATABASE_ERROR");
-    }
-};
-
-export const markAllAsReadService = async (conversation_id, user_id) => {
-    const conversation = await conversationRepository.findByIdWithAccess(
-        conversation_id,
-        user_id
-    );
-
-    if (!conversation) {
-        throw new Error("CONVERSATION_NOT_FOUND_OR_ACCESS_DENIED");
-    }
-
-    const result = await messageRepository.markAllAsRead(
-        conversation_id,
-        user_id
-    );
-
-    const unreadCount = await messageRepository.getUnreadCountAfterMark(
-        conversation_id,
-        user_id
-    );
-
-    return {
-        marked_count: result.marked_count,
-        unread_count: unreadCount,
-        has_unread_messages: unreadCount > 0,
-        conversation: {
-            id: conversation_id,
-            user1_id: conversation.user1_id,
-            user2_id: conversation.user2_id,
-        },
-    };
-};
+// ... rest of your existing messageService.js code remains the same ...
+// (getMessagesService, getMessageService, updateMessageService, deleteMessageService, etc.)
 
 ```
 
@@ -4264,6 +5357,160 @@ export const getProfileService = async (userId) => {
 
 ```
 
+## File: services/socketService.js
+```js
+import { connectedUsers, getIO } from "../config/socket.js";
+import { updateOnlineStatusService } from "./userService.js";
+
+export const updateUserOnlineStatus = async (userId, isOnline) => {
+    try {
+        await updateOnlineStatusService(userId, isOnline);
+    } catch (error) {
+        console.error("Error updating user online status:", error);
+    }
+};
+
+export const handleUserDisconnect = (socket) => {
+    // Only remove user if this is their current socket
+    const currentConnection = connectedUsers.get(socket.userId);
+    if (currentConnection && currentConnection.socketId === socket.id) {
+        // Remove user from connected users
+        connectedUsers.delete(socket.userId);
+
+        // Update user online status
+        updateUserOnlineStatus(socket.userId, false);
+
+        // Notify others that user went offline
+        socket.broadcast.emit("user_offline", {
+            user_id: socket.userId,
+            timestamp: new Date().toISOString(),
+        });
+
+        console.log(
+            `User ${socket.userId} fully disconnected and marked offline`
+        );
+    } else {
+        console.log(
+            `User ${socket.userId} disconnected old socket ${socket.id}, keeping new connection active`
+        );
+    }
+};
+
+export const getUserSocket = (userId) => {
+    const userConnection = connectedUsers.get(userId);
+    return userConnection
+        ? getIO().sockets.sockets.get(userConnection.socketId)
+        : null;
+};
+
+export const sendToUser = (userId, event, data) => {
+    const userSocket = getUserSocket(userId);
+    if (userSocket) {
+        userSocket.emit(event, data);
+        return true;
+    }
+    return false;
+};
+
+export const sendToConversation = (
+    conversationId,
+    event,
+    data,
+    excludeSender = null
+) => {
+    const io = getIO();
+    if (excludeSender) {
+        io.to(`conversation:${conversationId}`)
+            .except(excludeSender)
+            .emit(event, data);
+    } else {
+        io.to(`conversation:${conversationId}`).emit(event, data);
+    }
+};
+
+export const getConnectedUsers = () => {
+    return Array.from(connectedUsers.values()).map((conn) => conn.user);
+};
+
+export const isUserConnected = (userId) => {
+    return connectedUsers.has(userId);
+};
+
+export const getUserConnectionInfo = (userId) => {
+    return connectedUsers.get(userId);
+};
+
+// Send offline notifications when user comes online
+export const sendPendingNotifications = async (userId) => {
+    try {
+        const { conversationRepository } = await import(
+            "../repositories/conversationRepository.js"
+        );
+        const conversations = await conversationRepository.findByUserId(userId);
+
+        const userSocket = getUserSocket(userId);
+        if (userSocket && conversations.length > 0) {
+            userSocket.emit("pending_conversations", {
+                conversations,
+                timestamp: new Date().toISOString(),
+            });
+        }
+    } catch (error) {
+        console.error("Error sending pending notifications:", error);
+    }
+};
+
+// Check and send delivery status for pending messages
+export const checkPendingDeliveries = async (userId) => {
+    try {
+        const { messageRepository } = await import(
+            "../repositories/messageRepository.js"
+        );
+        const { conversationRepository } = await import(
+            "../repositories/conversationRepository.js"
+        );
+
+        // Get all conversations for the user
+        const conversations = await conversationRepository.findByUserId(userId);
+
+        for (const conversation of conversations) {
+            // Mark all undelivered messages as delivered
+            const updatedCount = await messageRepository.markAsDelivered(
+                conversation.id,
+                userId
+            );
+
+            if (updatedCount > 0) {
+                // Notify senders that their messages were delivered
+                const undeliveredMessages =
+                    await messageRepository.findByConversation(
+                        conversation.id,
+                        0,
+                        100
+                    );
+                const deliveredMessages = undeliveredMessages.filter(
+                    (msg) => msg.sender_id !== userId && !msg.is_delivered
+                );
+
+                for (const message of deliveredMessages) {
+                    const senderSocket = getUserSocket(message.sender_id);
+                    if (senderSocket) {
+                        senderSocket.emit("message_delivered", {
+                            message_id: message.id,
+                            conversation_id: conversation.id,
+                            delivered_at: new Date().toISOString(),
+                        });
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error("Error checking pending deliveries:", error);
+    }
+};
+
+```
+
 ## File: services/tokenService.js
 ```js
 import { tokenRepository } from "../repositories/tokenRepository.js";
@@ -4275,7 +5522,6 @@ import {
 } from "../utils/jwt.js";
 
 export const tokenService = {
-
     generateAuthTokens: async (userId) => {
         const accessToken = generateAccessToken(userId);
         const refreshToken = generateRefreshToken(userId);
@@ -4317,6 +5563,7 @@ export const tokenService = {
         try {
             return verifyAccessToken(token);
         } catch (error) {
+            console.error("Token validation error:", error.message);
             throw new Error("INVALID_ACCESS_TOKEN");
         }
     },
@@ -4330,7 +5577,7 @@ export const tokenService = {
             is_expired: new Date() > token.expires_at,
         }));
     },
-    
+
     cleanupExpiredTokens: async () => {
         const result = await tokenRepository.cleanupExpiredTokens();
         return { deletedCount: result.count };
@@ -4495,7 +5742,29 @@ export const handleProfileError = (res, error) => {
 export const handleCloudinaryError = (res, error) => {
     const errorMap = {
         UPLOAD_FAILED: () =>
-            errorResponse(res, "Failed to upload image to cloud storage", 502),
+            errorResponse(
+                res,
+                "Failed to upload image to cloud storage. Please try again.",
+                502
+            ),
+        UPLOAD_TIMEOUT: () =>
+            errorResponse(
+                res,
+                "Image upload timeout. The service may be temporarily unavailable. Please try again in a moment.",
+                504
+            ),
+        UPLOAD_STREAM_ERROR: () =>
+            errorResponse(
+                res,
+                "Upload connection error. Please try again.",
+                502
+            ),
+        STREAM_WRITE_ERROR: () =>
+            errorResponse(
+                res,
+                "Error processing file upload. Please try again.",
+                500
+            ),
         DELETE_FAILED: () =>
             errorResponse(
                 res,
@@ -4505,12 +5774,16 @@ export const handleCloudinaryError = (res, error) => {
         INVALID_IMAGE_FORMAT: () =>
             badRequestResponse(
                 res,
-                "Invalid image format. Supported formats: JPEG, PNG, WebP"
+                "Invalid image format. Supported formats: JPEG, PNG, WebP, GIF, BMP"
             ),
         IMAGE_TOO_LARGE: () =>
             badRequestResponse(res, "Image size too large. Maximum size: 5MB"),
+        FILE_TOO_LARGE: () =>
+            badRequestResponse(res, "File size too large. Maximum size: 10MB"),
         CLOUDINARY_CONFIG_ERROR: () =>
             errorResponse(res, "Cloud storage configuration error", 503),
+        CLOUDINARY_AUTH_ERROR: () =>
+            errorResponse(res, "Cloud storage authentication error", 503),
         IMAGE_PROCESSING_ERROR: () =>
             errorResponse(res, "Error processing image", 500),
         FILE_URL_REQUIRED: () =>
@@ -4526,7 +5799,10 @@ export const handleCloudinaryError = (res, error) => {
         handler();
     } else {
         console.error("Cloudinary error:", error);
-        errorResponse(res, "Image service temporarily unavailable");
+        errorResponse(
+            res,
+            "Image service temporarily unavailable. Please try again in a moment."
+        );
     }
 };
 
@@ -5013,13 +6289,11 @@ export const messageValidation = {
                 then: Joi.required(),
                 otherwise: Joi.optional().allow(""),
             }),
-        message_type: Joi.string()
-            .valid("TEXT", "IMAGE", "FILE", "VIDEO", "AUDIO")
-            .default("TEXT"),
+        message_type: Joi.string().valid("TEXT", "IMAGE").default("TEXT"),
         file_url: Joi.string()
             .uri()
             .when("message_type", {
-                is: Joi.valid("IMAGE", "FILE", "VIDEO", "AUDIO"),
+                is: "IMAGE",
                 then: Joi.required(),
                 otherwise: Joi.optional().allow(null),
             }),
