@@ -7,6 +7,8 @@ import { setupTypingHandlers } from "../handlers/typingHandlers.js";
 import {
     handleUserDisconnect,
     updateUserOnlineStatus,
+    sendPendingNotifications,
+    checkPendingDeliveries,
 } from "../services/socketService.js";
 
 // Global variables
@@ -24,7 +26,7 @@ export function initializeSocket(server) {
         pingTimeout: 60000,
         pingInterval: 25000,
         connectionStateRecovery: {
-            maxDisconnectionDuration: 120000, // 2 minutes
+            maxDisconnectionDuration: 120000,
         },
     });
 
@@ -77,6 +79,10 @@ function setupConnectionHandlers() {
 
         // Update user online status
         updateUserOnlineStatus(socket.userId, true);
+
+        // Send pending notifications and check deliveries
+        sendPendingNotifications(socket.userId);
+        checkPendingDeliveries(socket.userId);
 
         // Setup all event handlers
         setupUserHandlers(socket);

@@ -7,6 +7,7 @@ import {
     handleProfileError,
     handleCloudinaryError,
 } from "../utils/errorHandler.js";
+import { getIO } from "../config/socket.js";
 
 export const updateProfile = async (req, res) => {
     try {
@@ -18,6 +19,18 @@ export const updateProfile = async (req, res) => {
         };
 
         const updatedUser = await updateProfileService(userId, updateData);
+
+        // Trigger real-time profile update event
+        const io = getIO();
+        io.emit("user_profile_updated", {
+            user_id: userId,
+            user: updatedUser,
+            updated_at: new Date().toISOString(),
+            updated_fields: {
+                full_name: !!updateData.full_name,
+                avatar_url: !!req.file,
+            },
+        });
 
         successResponse(res, "Profile updated successfully", {
             user: updatedUser,

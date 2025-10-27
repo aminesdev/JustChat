@@ -78,3 +78,72 @@ export const isUserConnected = (userId) => {
 export const getUserConnectionInfo = (userId) => {
     return connectedUsers.get(userId);
 };
+
+// Send offline notifications when user comes online
+export const sendPendingNotifications = async (userId) => {
+    try {
+        const { conversationRepository } = await import(
+            "../repositories/conversationRepository.js"
+        );
+        const conversations = await conversationRepository.findByUserId(userId);
+
+        const userSocket = getUserSocket(userId);
+        if (userSocket && conversations.length > 0) {
+            userSocket.emit("pending_conversations", {
+                conversations,
+                timestamp: new Date().toISOString(),
+            });
+        }
+    } catch (error) {
+        console.error("Error sending pending notifications:", error);
+    }
+};
+
+// Check and send delivery status for pending messages
+export const checkPendingDeliveries = async (userId) => {
+    try {
+        const { messageRepository } = await import(
+            "../repositories/messageRepository.js"
+        );
+        const { conversationRepository } = await import(
+            "../repositories/conversationRepository.js"
+        );
+
+        // Get all conversations for the user
+        const conversations = await conversationRepository.findByUserId(userId);
+
+        for (const conversation of conversations) {
+            // Mark all undelivered messages as delivered
+            const updatedCount = await messageRepository.markAsDelivered(
+                conversation.id,
+                userId
+            );
+
+            if (updatedCount > 0) {
+                // Notify senders that their messages were delivered
+                const undeliveredMessages =
+                    await messageRepository.findByConversation(
+                        conversation.id,
+                        0,
+                        100
+                    );
+                const deliveredMessages = undeliveredMessages.filter(
+                    (msg) => msg.sender_id !== userId && !msg.is_delivered
+                );
+
+                for (const message of deliveredMessages) {
+                    const senderSocket = getUserSocket(message.sender_id);
+                    if (senderSocket) {
+                        senderSocket.emit("message_delivered", {
+                            message_id: message.id,
+                            conversation_id: conversation.id,
+                            delivered_at: new Date().toISOString(),
+                        });
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error("Error checking pending deliveries:", error);
+    }
+};
